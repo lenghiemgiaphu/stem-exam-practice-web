@@ -1,4 +1,3 @@
-# AI-Powered-EdTech-Web
 🚀 AI-Powered EdTech Web
 
 📌 Overview
@@ -80,21 +79,21 @@ AI Integration: Google Gemini API (Has not inserted API key)
 
 To run this project locally, ensure you have Node.js and pnpm installed.
 
-Clone the repository:
+1. Clone the repository:
 
 git clone https://github.com/lenghiemgiaphu/AI-Powered-EdTech-Web-v7.git
 cd AI-Powered-EdTech-Web-v7
 
 
-Install dependencies:
+2. Install dependencies:
 
 pnpm install
 
 
-Configure API Keys:
+3. Configure API Keys:
 Update your configuration files (e.g., .env.local or public/config.js) to insert your Firebase and Gemini API keys to enable full functionality.
 
-Start the development server:
+4. Start the development server:
 
 pnpm dev
 
