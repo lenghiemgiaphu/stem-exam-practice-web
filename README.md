@@ -40,39 +40,40 @@ Backend & Auth: Firebase (Has not inserted API key)
 
 AI Integration: Google Gemini API (Has not inserted API key)
 
-📂 Project Structure
+## 📁 Project Structure
 
+```text
 📦 AI-Powered-EdTech-Web
- ┣ 📂 app                  # Next.js App Router (Pages, Layouts, API Routes)
- ┃ ┣ 📂 api                # Backend API endpoints
- ┃ ┃ ┣ 📂 generate-quiz
- ┃ ┃ ┗ 📂 live
- ┃ ┣ 📜 globals.css
- ┃ ┣ 📜 layout.tsx
- ┃ ┗ 📜 page.tsx
- ┣ 📂 components           # React UI Components
- ┃ ┗ 📂 ui
- ┃   ┗ 📜 button.tsx
- ┣ 📂 lib                  # Utility functions and core engine logic
- ┃ ┣ 📂 live
- ┃ ┃ ┣ 📜 engine.ts
- ┃ ┃ ┣ 📜 errors.ts
- ┃ ┃ ┣ 📜 extract.ts
- ┃ ┃ ┣ 📜 safe-fetch.ts
- ┃ ┃ ┗ 📜 schema.ts
- ┃ ┗ 📜 utils.ts
- ┣ 📂 public               # Static assets, Vanilla JS logic, and mock data
- ┃ ┣ 📜 index.html         # Static entry point (if applicable)
- ┃ ┣ 📜 style.css
- ┃ ┣ 📜 app.js, ai.js, auth.js, config.js, data.js, etc.
- ┃ ┗ 🖼️ placeholder-logo.png, icon.svg, etc.
- ┣ 📜 components.json      # UI Component config
- ┣ 📜 next.config.mjs      # Next.js configuration
- ┣ 📜 package.json         # Dependencies and scripts
- ┣ 📜 pnpm-lock.yaml       # Package lock file
- ┣ 📜 postcss.config.mjs   # PostCSS configuration
- ┣ 📜 README.md            # Project documentation
- ┗ 📜 tsconfig.json        # TypeScript configuration
+┣ 📁 app                    # Next.js App Router (Pages, Layouts, API Routes)
+┃ ┣ 📁 api                  # Backend API endpoints
+┃ ┃ ┗ 📁 generate-quiz 
+┃ ┃   ┗ 📁 live
+┃ ┣ 📄 globals.css 
+┃ ┣ 📄 layout.tsx 
+┃ ┗ 📄 page.tsx
+┣ 📁 components             # React UI Components
+┃ ┗ 📁 ui
+┃   ┗ 📄 button.tsx
+┣ 📁 lib                    # Utility functions and core engine logic
+┃ ┣ 📁 live
+┃ ┃ ┣ 📄 engine.ts
+┃ ┃ ┣ 📄 errors.ts
+┃ ┃ ┣ 📄 extract.ts
+┃ ┃ ┣ 📄 safe-fetch.ts
+┃ ┃ ┗ 📄 schema.ts
+┃ ┗ 📄 utils.ts
+┣ 📁 public                 # Static assets, Vanilla JS logic, and mock data
+┃ ┣ 📄 index.html           # Static entry point (if applicable)
+┃ ┣ 📄 style.css 
+┃ ┣ 📄 app.js, ai.js, auth.js, config.js, data.js, etc.
+┃ ┗ 🖼️ placeholder-logo.png, icon.svg, etc.
+┣ 📄 components.json        # UI Component config
+┣ 📄 next.config.mjs        # Next.js configuration
+┣ 📄 package.json           # Dependencies and scripts
+┣ 📄 pnpm-lock.yaml         # Package lock file
+┣ 📄 postcss.config.mjs     # PostCSS configuration
+┣ 📄 README.md              # Project documentation
+┗ 📄 tsconfig.json          # TypeScript configuration
 
 
 💻 Local Development
