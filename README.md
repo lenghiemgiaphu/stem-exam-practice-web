@@ -49,7 +49,7 @@ LabLuyen (*Lab* + *Luyện* — "practice") is a Vietnamese-language web app bui
 
 | Feature | Details |
 | :--- | :--- |
-| **Question bank** | Physics, Chemistry and Biology for grades 10–12, organized by grade → topic → difficulty. **57 questions across 18 topics** ship with the repository (19 per subject, 19 per grade). |
+| **Question bank** | Physics, Chemistry and Biology for grades 10–12, organized by grade → topic → difficulty. **353 questions across 28 topics** ship with the repository. |
 | **Four question types** | Multiple choice (A–D), True/False with four statements a–d, Short answer, and **Drag & drop** matching (5 slots plus distractor chips). |
 | **Three difficulty levels** | Easy (*Nhận biết*), Medium (*Thông hiểu*), Hard (*Vận dụng*). Practice sessions can filter by type and level. |
 | **Timed mock exams** | Countdown timer, per-exam duration (45 / 50 / 90 min in the bundled exams), result page with 10-point score and per-topic breakdown. |
