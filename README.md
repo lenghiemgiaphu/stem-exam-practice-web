@@ -232,8 +232,8 @@ Build a printable paper from any question set: choose the number of questions an
 ### 6.2 Install and run
 
 ```bash
-git clone https://github.com/<your-username>/AI-Powered-EdTech-Web.git
-cd AI-Powered-EdTech-Web
+git clone https://github.com/lenghiemgiaphu/AI-Powered_EdTech_Web.git
+cd AI-Powered_EdTech_Web
 pnpm install
 pnpm dev
 ```
@@ -378,6 +378,12 @@ When adding questions, follow the helper constructors in `public/data.js` (`mc`,
 - UI components: [shadcn/ui](https://ui.shadcn.com/) · icons: [Lucide](https://lucide.dev/), [Font Awesome](https://fontawesome.com/) · typeface: [Plus Jakarta Sans](https://fonts.google.com/specimen/Plus+Jakarta+Sans)
 - AI: [Vercel AI SDK](https://ai-sdk.dev/) and [Google Gemini](https://ai.google.dev/)
 - Infrastructure: [Vercel](https://vercel.com/), [Upstash](https://upstash.com/), [Firebase](https://firebase.google.com/)
+
+---
+
+## 12. License
+
+Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for details.
 
 ---
 
