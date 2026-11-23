@@ -6,6 +6,7 @@
 
 Next.js 16 • React 19 • TypeScript • Gemini • Firebase Auth • Upstash Redis
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-labluyen.vercel.app-000000?style=flat-square&logo=vercel&logoColor=white)](https://labluyen.vercel.app/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -17,7 +18,7 @@ Next.js 16 • React 19 • TypeScript • Gemini • Firebase Auth • Upstash 
 [![Status](https://img.shields.io/badge/Status-Beta-F59E0B?style=flat-square)](#9-scope-limitations--caveats)
 [![License](https://img.shields.io/badge/License-MIT-16A34A?style=flat-square)](#12-license)
 
-[✨ Features](#2-features) • [🏗️ Architecture](#3-system-architecture) • [🚀 Quick Start](#6-quick-start) • [🔐 Security](#8-security--reliability-design) • [⚠️ Limitations](#9-scope-limitations--caveats)
+[🌐 Live Demo](https://labluyen.vercel.app/) • [✨ Features](#2-features) • [🏗️ Architecture](#3-system-architecture) • [🚀 Quick Start](#6-quick-start) • [🔐 Security](#8-security--reliability-design) • [⚠️ Limitations](#9-scope-limitations--caveats)
 
 </div>
 
