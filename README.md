@@ -2,7 +2,7 @@
 
 # LabLuyen — AI-Powered EdTech Web
 
-**An exam-prep platform for Vietnamese high-school Physics, Chemistry and Biology: topic-based question bank, timed mock exams, AI quiz generation from any document, an AI tutor, live multiplayer quiz battles, and gamified study progress.**
+**An exam-prep platform for Vietnamese high-school Mathematics, Physics, Chemistry, Biology and English: topic-based question bank, timed mock exams, AI quiz generation from any document, an AI tutor, live multiplayer quiz battles, and gamified study progress.**
 
 Next.js 16 • React 19 • TypeScript • Gemini • Firebase Auth • Upstash Redis
 
@@ -50,8 +50,9 @@ LabLuyen (*Lab* + *Luyện* — "practice") is a Vietnamese-language web app bui
 
 | Feature | Details |
 | :--- | :--- |
-| **Question bank** | Physics, Chemistry and Biology for grades 10–12, organized by grade → topic → difficulty. **353 questions across 28 topics** ship with the repository. |
-| **Four question types** | Multiple choice (A–D), True/False with four statements a–d, Short answer, and **Drag & drop** matching (5 slots plus distractor chips). |
+| **Question bank** | Mathematics, Physics, Chemistry, Biology and English for grades 10–12, organized by grade → topic → difficulty. **419 questions across 43 topics** and **7 mock exams** ship with the repository. |
+| **Four question types** | Multiple choice (A–D), True/False with four statements a–d, Short answer (numeric answers accept integers, negatives and decimals with `,` or `.`), and **Drag & drop** matching (5 slots plus distractor chips). Exam sections (Part I, II, …) appear only for the types an exam actually contains. |
+| **Math rendering** | Formulas written as `$...$` (inline) or `$$...$$` (block) render with KaTeX in questions, options, statements, explanations, the AI tutor chat, live quizzes and AI quizzes. |
 | **Three difficulty levels** | Easy (*Nhận biết*), Medium (*Thông hiểu*), Hard (*Vận dụng*). Practice sessions can filter by type and level. |
 | **Timed mock exams** | Countdown timer, per-exam duration (45 / 50 / 90 min in the bundled exams), result page with 10-point score and per-topic breakdown. |
 | **Exam-style grading** | True/False questions use the official partial-credit scheme: 1 / 2 / 3 / 4 correct statements → **0.10 / 0.25 / 0.50 / 1.00** of the question's marks. |
@@ -69,7 +70,7 @@ Turn teaching material into a ready-to-use quiz, summary and key-point list.
 | **YouTube** | `youtube.com`, `youtu.be`, Shorts, embeds | URL is normalized and passed to the model as a video input. |
 | **Pasted text** | Free text (200 – 60,000 chars) | Cleaned and passed as a delimited document block. |
 
-**Options:** subject (Physics / Chemistry / Biology / General), grade 10–12, **3–20 questions**, difficulty (mixed ≈ 40 % easy / 40 % medium / 20 % hard, or a fixed level) and question types.
+**Options:** subject (Math / Physics / Chemistry / Biology / English / General), grade 10–12, **3–20 questions**, difficulty (mixed ≈ 40 % easy / 40 % medium / 20 % hard, or a fixed level) and question types.
 
 **Output:** title, a 4–6 sentence summary, 5–8 key points, and questions tagged with a consistent *topic* (3–8 topics per quiz) so results can be aggregated by chapter. Quizzes (up to 20 per account) are kept in the browser, can be practised like bank questions, and exported as an exam paper.
 
@@ -107,7 +108,8 @@ Build a printable paper from any question set: choose the number of questions an
 ```text
                                   Browser (static SPA, hash routing)
 +-------------------------------------------------------------------------------------+
-| index.html  ->  config.js, data.js, data-extra.js, auth.js, ai.js, app.js,          |
+| index.html  ->  config.js, data.js, data-extra.js, data-math.js, data-english.js,   |
+|                 auth.js, ai.js, app.js, math.js (KaTeX auto-render),                |
 |                 export.js, features.js, game.js, live.js, about.js                  |
 |                                                                                     |
 |  Practice & Exams     AI Quiz UI      Live UI (polling)     Stats / Profile         |
@@ -171,6 +173,7 @@ Build a printable paper from any question set: choose the number of questions an
 | :--- | :--- |
 | **Framework** | Next.js 16 (App Router, route handlers), React 19, TypeScript 5.7 |
 | **Styling / UI** | Tailwind CSS 4, shadcn/ui (`base-nova` style) with Base UI, Lucide, Font Awesome, Plus Jakarta Sans |
+| **Math** | KaTeX 0.16 (CDN) + auto-render, driven by `public/math.js` |
 | **AI** | Vercel AI SDK (`ai`) with structured output; Google Gemini (quiz generation and tutor) |
 | **Auth** | Firebase Authentication — Google sign-in and email/password |
 | **Realtime state** | Upstash Redis (`@upstash/redis`) with `@upstash/ratelimit` |
@@ -204,7 +207,10 @@ Build a printable paper from any question set: choose the number of questions an
 ├── public/                          # Static single-page app
 │   ├── index.html                   # App shell and navigation
 │   ├── config.js                    # Client-side keys (Gemini, Firebase) — template
-│   ├── data.js / data-extra.js      # Question bank, mock exams, drag-and-drop questions
+│   ├── data.js / data-extra.js      # Subject config, exam schema, Physics/Chemistry/Biology questions, mock exams
+│   ├── math.js                      # KaTeX auto-render (scans the page and observes new content)
+│   ├── data-math.js                 # Mathematics questions (grades 10–12, LaTeX) + 2 exams
+│   ├── data-english.js              # English questions (grades 10–12) + mock exam
 │   ├── app.js                       # Router, practice, exams, grading, history
 │   ├── ai.js                        # AI tutor client
 │   ├── auth.js                      # Firebase Auth wrapper
@@ -303,7 +309,7 @@ The project is a standard Next.js app and deploys to **Vercel** with no extra bu
 | :--- | :--- | :--- |
 | `mode` | `file` \| `link` \| `youtube` \| `text` | Source type. |
 | `file` / `url` / `text` | — | Payload for the chosen mode. |
-| `subject` | `Physics` \| `Chemistry` \| `Biology` \| `General` | |
+| `subject` | `Math` \| `Physics` \| `Chemistry` \| `Biology` \| `English` \| `General` | |
 | `grade` | `10`–`12` | |
 | `count` | `3`–`20` | |
 | `difficulty` | `mixed` \| `easy` \| `medium` \| `hard` | |
@@ -345,10 +351,11 @@ The project is a standard Next.js app and deploys to **Vercel** with no extra bu
 2. **Progress is local.** XP, streaks, badges, history and saved quizzes are stored in `localStorage`: they do not sync across devices, can be cleared by the browser, and can be edited by the user. Do not use them for high-stakes assessment.
 3. **Quiz generation limits are best-effort.** The 10-requests-per-10-minutes limiter on `/api/generate-quiz` is held in memory, so it is per server instance and resets on cold starts. Use the Redis-backed limiter (already used by live battles) if you need strict enforcement.
 4. **AI output is unverified.** Generated questions and tutor explanations can be wrong. Teachers should review a quiz before using it for assessment (the About page says so too).
-5. **Small bundled content.** The shipped bank (57 questions, 4 mock exams) is a demonstration set, not a complete curriculum; the exams labelled "official structure" are sample papers, not real past papers.
+5. **Small bundled content.** The shipped bank (419 questions, 7 mock exams) is a demonstration set, not a complete curriculum; the exams labelled "official structure" are sample papers, not real past papers.
 6. **Live battles use polling.** Clients poll the room state rather than holding a WebSocket / SSE connection. It is simple and serverless-friendly but adds latency and request volume as rooms grow. Live questions are multiple choice only.
 7. **No automated tests / CI yet**, and `next.config.mjs` sets `typescript.ignoreBuildErrors = true`, so type errors do not fail a build.
-8. **Branding leftovers.** `package.json` is still named `my-project`, and `app/layout.tsx` metadata still reads "v0 App"; update both before publishing.
+8. **Exam export does not render formulas.** *Export for print* (PDF / Word) builds a standalone HTML page, so LaTeX in Math questions appears as raw `$...$` text there.
+9. **Branding leftovers.** `package.json` is still named `my-project`, and `app/layout.tsx` metadata still reads "v0 App"; update both before publishing.
 
 **Roadmap (proposed)**
 
@@ -371,6 +378,21 @@ Issues and pull requests are welcome.
 3. Commit with a clear message and open a pull request describing the change.
 
 When adding questions, follow the helper constructors in `public/data.js` (`mc`, `tf`, `sa`) and `public/data-extra.js` (`dd`), and keep each question's `topic` name consistent so statistics aggregate correctly.
+
+### Data model: subjects and exams
+
+* **Subjects** are declared once in `SUBJECTS` (`public/data.js`): `Math`, `Physics`, `Chemistry`, `Biology`, `English`. Declaration order is the display order everywhere (subject cards, question-bank chips, exam filter, statistics).
+* **Questions** always carry their own `subject` and `topic` (`grade` is optional for future standardized-test questions), so the *per-topic analysis* works even for an exam that mixes several subjects.
+* **Exams** carry an `examCategory`: `"subject"` (per-subject THPT exams, the only category shown today) or `"standardized"` (reserved for ĐGNL / TSA / HSA, hidden for now). Visibility is controlled by `EXAM_CATEGORIES[...].visible` in `public/data.js`. Standardized exams may set `subject: "Mixed"` and `standardizedType: "DGNL" | "TSA" | "HSA"`.
+* A per-subject exam must contain only questions of its own subject.
+* **Exam sections are dynamic.** Part numbers (PHẦN I, II, III, …) are generated from the question types present in the exam, in the order multiple choice → true/false → short answer → drag & drop. A type with no questions produces no section, and the remaining parts are numbered consecutively.
+
+### Writing math content
+
+* Wrap formulas in `$...$` (inline) or `$$...$$` (own line); `\( ... \)` and `\[ ... \]` also work. `public/math.js` renders them everywhere, so no per-screen code is needed. If KaTeX cannot load (offline), the raw LaTeX stays readable.
+* In JavaScript data files use `String.raw` to avoid doubling backslashes (see `public/data-math.js`: ``L`Tính $\int_0^1 x\,dx$` ``).
+* A literal dollar sign in content is read as a formula delimiter; avoid `$` for currency in math questions.
+* **Short answer numbers:** store `correctAnswer` as a plain number (`"-4"`, `"0.4"`). Students may type `-4`, `−4`, `0,4`, `0.4`, `.4`, `+7`; values are compared numerically. Non-numeric answers (words) are compared after trimming spaces, lower-casing and removing accents.
 
 ---
 
