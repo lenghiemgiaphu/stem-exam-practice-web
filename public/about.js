@@ -5,7 +5,7 @@
   const { view } = App;
 
   const FEATURES = [
-    { icon: "fa-layer-group", tone: "bg-indigo-100 text-indigo-700", name: "Ngân hàng câu hỏi và đề thi thử", role: "Kho câu hỏi Lý, Hóa, Sinh lớp 10 đến 12 chia theo chuyên đề, mức độ và dạng câu; đề thi có đồng hồ đếm ngược như đề giấy.", effect: "Học sinh ôn đúng phần còn yếu, làm quen áp lực thời gian và cấu trúc đề trước kỳ thi thật." },
+    { icon: "fa-layer-group", tone: "bg-indigo-100 text-indigo-700", name: "Ngân hàng câu hỏi và đề thi thử", role: "Kho câu hỏi Toán, Lý, Hóa, Sinh, Anh lớp 10 đến 12 chia theo chuyên đề, mức độ và dạng câu; đề thi có đồng hồ đếm ngược như đề giấy.", effect: "Học sinh ôn đúng phần còn yếu, làm quen áp lực thời gian và cấu trúc đề trước kỳ thi thật." },
     { icon: "fa-wand-magic-sparkles", tone: "bg-violet-100 text-violet-700", name: "Quiz AI và gia sư AI", role: "Tạo bộ câu hỏi từ tệp, bài báo, video hoặc văn bản; giải thích từng bước khi học sinh chưa hiểu lời giải.", effect: "Giáo viên tiết kiệm thời gian soạn đề, học sinh có người giải đáp ngay khi cần thay vì bỏ dở câu khó." },
     { icon: "fa-chart-column", tone: "bg-rose-100 text-rose-700", name: "Thống kê chủ đề hay sai", role: "Tổng hợp kết quả theo chương, theo câu và theo học sinh bằng biểu đồ trực quan.", effect: "Giáo viên biết chính xác nội dung cần giảng lại; học sinh biết nên ôn gì trước." },
     { icon: "fa-fire", tone: "bg-orange-100 text-orange-600", name: "Chuỗi ngày học, XP, cấp độ và huy hiệu", role: "Ghi nhận mỗi ngày học, mỗi câu đúng bằng điểm kinh nghiệm, cấp độ và các huy hiệu cần mở khóa.", effect: "Biến việc ôn tập thành thói quen đều đặn: học ít mỗi ngày hiệu quả hơn dồn vào sát ngày thi." },
@@ -39,7 +39,7 @@
     <section class="hero-bg">
       <div class="mx-auto max-w-6xl px-4 pb-14 pt-14">
         <p class="text-sm font-bold uppercase tracking-wide text-indigo-600">Giới thiệu LabLuyen</p>
-        <h1 class="mt-3 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl">Nền tảng ôn thi Lý, Hóa, Sinh giúp học đều, hiểu sâu và thấy rõ tiến bộ</h1>
+        <h1 class="mt-3 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl">Nền tảng ôn thi Toán, Lý, Hóa, Sinh, Anh giúp học đều, hiểu sâu và thấy rõ tiến bộ</h1>
         <p class="mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">LabLuyen kết hợp ngân hàng câu hỏi theo chương trình THPT, đề thi bấm giờ, trợ lý AI và yếu tố trò chơi hóa để học sinh luyện tập mỗi ngày, còn giáo viên nắm được lớp mình đang vướng ở đâu.</p>
         <div class="mt-7 flex flex-wrap gap-3"><a href="#/bank" class="btn btn-primary btn-lg">Bắt đầu luyện tập</a><a href="#/live" class="btn btn-secondary btn-lg"><i class="fa-solid fa-gamepad" aria-hidden="true"></i>Thử đấu trực tiếp</a></div>
       </div>
