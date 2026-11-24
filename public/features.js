@@ -23,12 +23,8 @@
   const pct = (x) => `${Math.round(x * 100)}%`;
   const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-  const SUBJECT_OPTIONS = [
-    ["Physics", "Vật lí"],
-    ["Chemistry", "Hóa học"],
-    ["Biology", "Sinh học"],
-    ["General", "Môn khác / Tổng hợp"],
-  ];
+  // 5 môn lấy từ SUBJECTS (data.js) để luôn khớp cấu hình môn học; "General" dành cho tài liệu ngoài 5 môn.
+  const SUBJECT_OPTIONS = [...Object.entries(SUBJECTS).map(([key, sub]) => [key, sub.label]), ["General", "Môn khác / Tổng hợp"]];
   const TYPE_OPTIONS = [
     ["multiple_choice", "Trắc nghiệm"],
     ["true_false", "Đúng/Sai"],
@@ -507,7 +503,7 @@
         <summary class="flex cursor-pointer list-none flex-col gap-2 p-4 sm:flex-row sm:items-center sm:gap-4">
           <div class="min-w-0 sm:w-64 sm:flex-none">
             <p class="truncate font-bold text-slate-900">${esc(r.topic)}</p>
-            <p class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500"><span class="rounded-md px-1.5 py-0.5 font-bold ${s.badge}">${r.aiQuiz ? "Quiz AI" : s.label}</span>Lớp ${r.grade}</p>
+            <p class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500"><span class="rounded-md px-1.5 py-0.5 font-bold ${s.badge}">${r.aiQuiz ? "Quiz AI" : s.label}</span>${r.grade ? `Lớp ${r.grade}` : ""}</p>
           </div>
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <div class="h-3 flex-1 overflow-hidden rounded-full bg-slate-100" role="img" aria-label="Tỉ lệ sai ${pct(r.wrongRate)}"><div class="h-full rounded-full ${t.bar}" style="width:${Math.max(3, Math.round(r.wrongRate * 100))}%"></div></div>
@@ -534,7 +530,7 @@
                   : `<p class="mt-2 text-sm text-slate-500">Không có học sinh nào dưới 50% ở chủ đề này.</p>`
                 : `<p class="mt-2 text-sm text-slate-700">Ôn lại lý thuyết chủ đề này rồi luyện tập thêm để cải thiện tỉ lệ đúng.</p>`
             }
-            <a href="${r.aiQuiz ? `#/ai-quiz/${r.aiQuiz}?topic=${encodeURIComponent(r.topic)}` : `#/practice/${r.subject}/${r.grade}/${encodeURIComponent(r.topic)}`}" class="btn btn-secondary btn-sm mt-3">Luyện tập chủ đề này</a></div>
+            <a href="${r.aiQuiz ? `#/ai-quiz/${r.aiQuiz}?topic=${encodeURIComponent(r.topic)}` : r.grade ? `#/practice/${r.subject}/${r.grade}/${encodeURIComponent(r.topic)}` : `#/bank/${r.subject}`}" class="btn btn-secondary btn-sm mt-3">Luyện tập chủ đề này</a></div>
         </div>
       </details></li>`;
     };
