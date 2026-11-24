@@ -1,4 +1,18 @@
+/* =====================================================================
+ * Subject config – 5 môn THPT. Thứ tự khai báo = thứ tự hiển thị trên giao diện
+ * (thẻ môn học, bộ lọc Ngân hàng câu hỏi, Đề thi, Thống kê...).
+ * Key (Math, Physics, ...) là giá trị lưu trong question.subject / exam.subject.
+ * ===================================================================== */
 const SUBJECTS = {
+  Math: {
+    label: "Toán học",
+    icon: "fa-square-root-variable",
+    badge: "bg-indigo-100 text-indigo-700",
+    soft: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    solid: "bg-indigo-600 text-white",
+    text: "text-indigo-600",
+    bar: "bg-indigo-500",
+  },
   Physics: {
     label: "Vật lí",
     icon: "fa-atom",
@@ -26,7 +40,55 @@ const SUBJECTS = {
     text: "text-emerald-600",
     bar: "bg-emerald-500",
   },
+  English: {
+    label: "Tiếng Anh",
+    icon: "fa-language",
+    badge: "bg-rose-100 text-rose-700",
+    soft: "bg-rose-50 text-rose-700 ring-rose-200",
+    solid: "bg-rose-500 text-white",
+    text: "text-rose-600",
+    bar: "bg-rose-500",
+  },
 };
+
+// Môn mở mặc định khi vào #/bank mà chưa chọn môn.
+const DEFAULT_SUBJECT = "Math";
+
+/* =====================================================================
+ * Exam schema (extensible)
+ *
+ * Exam = {
+ *   examId, title, defaultTimeMinutes,
+ *   kind: "mock" | "real",
+ *   examCategory: "subject" | "standardized",   // mặc định "subject"
+ *   subject: <key của SUBJECTS> | "Mixed",       // "Mixed" dành cho đề tổng hợp nhiều phân môn
+ *   standardizedType?: "DGNL" | "TSA" | "HSA",   // chỉ dùng khi examCategory === "standardized"
+ *   questions: [questionId, ...]                 // id trong questionBank
+ * }
+ *
+ * Mỗi câu hỏi trong questionBank luôn có `subject` và `topic` RIÊNG (kể cả khi nằm
+ * trong đề "Mixed"), nên bảng "Phân tích theo chuyên đề" gộp theo từng câu chứ không
+ * theo đề. `grade` là tùy chọn với câu hỏi của đề chuẩn hóa (không gắn lớp).
+ *
+ * Giao diện hiện tại CHỈ hiển thị các nhóm có `visible: true` bên dưới.
+ * Khi mở mảng ĐGNL/TSA/HSA: đổi `standardized.visible` thành true và thêm bộ lọc.
+ * ===================================================================== */
+const DEFAULT_EXAM_CATEGORY = "subject";
+
+const EXAM_CATEGORIES = {
+  subject: { label: "Đề thi theo môn THPT", visible: true },
+  standardized: { label: "Đề thi chuẩn hóa (ĐGNL, TSA, HSA)", visible: false },
+};
+
+// Danh mục dự phòng cho nhóm "standardized" (chưa hiển thị trên giao diện).
+const STANDARDIZED_EXAM_TYPES = {
+  DGNL: { label: "ĐGNL", fullName: "Đánh giá năng lực (ĐHQG TP.HCM)" },
+  TSA: { label: "TSA", fullName: "Đánh giá tư duy (ĐH Bách khoa Hà Nội)" },
+  HSA: { label: "HSA", fullName: "Đánh giá năng lực (ĐHQG Hà Nội)" },
+};
+
+const examCategoryOf = (exam) => exam.examCategory || DEFAULT_EXAM_CATEGORY;
+const isExamVisible = (exam) => !!EXAM_CATEGORIES[examCategoryOf(exam)]?.visible;
 
 const GRADES = [10, 11, 12];
 
@@ -1936,18 +1998,26 @@ const questionBank = [
 
 const mockExams = [
   {
+    // Giữ nguyên examId để không mất liên kết lịch sử làm bài cũ.
+    // Trước đây đề này trộn câu Hóa (che_11_01) và Sinh (bio_12_01); nay chỉ còn câu Vật lí lớp 10–12.
     examId: "exam_demo_01",
     title: "Đề thi thử THPT Quốc gia - Môn Lý (Rút gọn)",
     defaultTimeMinutes: 50,
     kind: "mock",
-    subject: "Mixed",
-    questions: ["phy_10_01", "che_11_01", "bio_12_01"],
+    examCategory: "subject",
+    subject: "Physics",
+    questions: [
+      "phy_10_01", "phy_10_04", "phy_11_01", "phy_12_03",
+      "phy_10_03", "phy_12_04",
+      "phy_10_02", "phy_12_02",
+    ],
   },
   {
     examId: "exam_phy_mock_01",
     title: "Đề thi thử Vật lí tổng hợp 10 – 12",
     defaultTimeMinutes: 45,
     kind: "mock",
+    examCategory: "subject",
     subject: "Physics",
     questions: [
       "phy_10_01", "phy_10_04", "phy_10_05", "phy_11_01", "phy_11_03", "phy_12_01", "phy_12_03",
@@ -1960,6 +2030,7 @@ const mockExams = [
     title: "Đề minh họa Hóa học – Cấu trúc THPT Quốc gia",
     defaultTimeMinutes: 50,
     kind: "real",
+    examCategory: "subject",
     subject: "Chemistry",
     questions: [
       "che_10_01", "che_10_03", "che_11_02", "che_11_04", "che_12_01", "che_12_03",
@@ -1972,6 +2043,7 @@ const mockExams = [
     title: "Đề minh họa Sinh học – Cấu trúc THPT Quốc gia",
     defaultTimeMinutes: 90,
     kind: "real",
+    examCategory: "subject",
     subject: "Biology",
     questions: [
       "bio_10_01", "bio_10_03", "bio_11_01", "bio_11_03", "bio_12_02", "bio_12_04",
