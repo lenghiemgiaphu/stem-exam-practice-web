@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#4f46e5" />
-  <meta name="description" content="LabLuyen - Nền tảng luyện thi THPT môn Vật lí, Hóa học, Sinh học: ngân hàng câu hỏi theo chuyên đề, đề thi thử có bấm giờ, chấm điểm thang 10 và gia sư AI." />
-  <title>LabLuyen – Luyện thi Lý, Hóa, Sinh THPT</title>
+  <meta name="description" content="LabLuyen - Nền tảng luyện thi THPT môn Toán học, Vật lí, Hóa học, Sinh học, Tiếng Anh: ngân hàng câu hỏi theo chuyên đề, đề thi thử có bấm giờ, chấm điểm thang 10 và gia sư AI." />
+  <title>LabLuyen – Luyện thi Toán, Lý, Hóa, Sinh, Anh THPT</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -23,6 +23,11 @@
       },
     };
   </script>
+  <!-- KaTeX: hiển thị công thức toán ($...$ và $$...$$). math.js nạp sau cùng để tự quét và theo dõi trang. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <script defer src="math.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased" data-view="home">
@@ -73,11 +78,26 @@
   <main id="view" tabindex="-1" class="outline-none"></main>
 
   <footer id="site-footer" class="mt-24 border-t border-slate-200 bg-white">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-slate-500 sm:flex-row">
-      <p class="flex items-center gap-2 font-semibold text-slate-700">
-        <i class="fa-solid fa-atom text-indigo-600" aria-hidden="true"></i> LabLuyen
-      </p>
-      <p>Nền tảng luyện thi THPT môn Vật lí – Hóa học – Sinh học.</p>
+    <div class="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 md:flex-row md:items-start md:justify-between">
+      <div class="max-w-sm">
+        <a href="#/" class="inline-flex items-center gap-2.5 font-extrabold tracking-tight text-slate-900">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/30">
+            <i class="fa-solid fa-atom" aria-hidden="true"></i>
+          </span>
+          <span class="text-lg">Lab<span class="text-indigo-600">Luyen</span></span>
+        </a>
+        <p class="mt-3 max-w-xs text-balance text-sm leading-relaxed text-slate-600">Nền tảng luyện thi THPT môn Toán – Vật lí – Hóa học – Sinh học – Tiếng Anh.</p>
+      </div>
+      <nav aria-label="Liên kết nhanh">
+        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Liên kết nhanh</p>
+        <ul class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-slate-600">
+          <li><a href="#/" class="rounded transition hover:text-indigo-600 focus-visible:text-indigo-600">Trang chủ</a></li>
+          <li><a href="#/bank" class="rounded transition hover:text-indigo-600 focus-visible:text-indigo-600">Ngân hàng câu hỏi</a></li>
+          <li><a href="#/exams" class="rounded transition hover:text-indigo-600 focus-visible:text-indigo-600">Đề thi</a></li>
+          <li><a href="#/ai-quiz" class="rounded transition hover:text-indigo-600 focus-visible:text-indigo-600">Quiz AI</a></li>
+          <li><a href="#/about" class="rounded transition hover:text-indigo-600 focus-visible:text-indigo-600">Giới thiệu</a></li>
+        </ul>
+      </nav>
     </div>
   </footer>
 
@@ -89,6 +109,8 @@
 <script src="config.js"></script>
 <script src="data.js"></script>
 <script src="data-extra.js"></script>
+<script src="data-math.js"></script>
+<script src="data-english.js"></script>
 <script src="auth.js"></script>
 <script src="ai.js"></script>
 <script src="app.js"></script>
