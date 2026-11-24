@@ -287,3 +287,24 @@ mark { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 1px; 
 .dd-bank.is-over { border-color: #4f46e5; background: #eef2ff; }
 .dd-bank-title { margin-bottom: .6rem; font-size: .75rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #64748b; }
 .dd-bank > div { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+/* ---------- Math (KaTeX) ---------- */
+.katex { font-size: 1.08em; }
+.katex-display { margin: .75em 0; padding: .15em 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+.question-card, .opt > span, .tf-row > p, .dd-prompt, .dd-chip, .explain-box, .bubble { min-width: 0; overflow-wrap: anywhere; }
+.opt .katex-display, .tf-row .katex-display, .dd-chip .katex-display { margin: .3em 0; }
+.dd-chip .katex { font-size: 1em; }
+.explain-box .katex-display { text-align: left; }
+
+/* ---------- Short answer: so sánh bài làm với đáp án chuẩn ---------- */
+.sa-review { display: grid; gap: .75rem; max-width: 36rem; }
+@media (min-width: 640px) { .sa-review { grid-template-columns: 1fr 1fr; } }
+.sa-box { border: 1.5px solid #e2e8f0; border-radius: .85rem; padding: .7rem .95rem; background: #fff; }
+.sa-box-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b; display: flex; align-items: center; gap: .4rem; }
+.sa-box-value { margin-top: .2rem; font-size: 1.15rem; font-weight: 700; color: #0f172a; word-break: break-word; }
+.sa-box.is-correct { border-color: #10b981; background: #ecfdf5; }
+.sa-box.is-wrong { border-color: #f43f5e; background: #fff1f2; }
+.sa-box.is-blank { background: #f8fafc; }
+.sa-box.is-blank .sa-box-value { color: #64748b; font-weight: 600; font-size: 1rem; }
+.sa-box.is-key { border-color: #a7f3d0; background: #f0fdf9; }
+.sa-input[aria-invalid="true"] { border-color: #f43f5e; }
