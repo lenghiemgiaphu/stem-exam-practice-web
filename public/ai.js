@@ -4,12 +4,13 @@ const AITutor = (() => {
 
   function systemPrompt(ctx) {
     return [
-      "Bạn là gia sư Vật lí, Hóa học, Sinh học THPT thân thiện, trả lời bằng tiếng Việt, ngắn gọn và dễ hiểu.",
+      "Bạn là gia sư Toán học, Vật lí, Hóa học, Sinh học, Tiếng Anh THPT thân thiện, trả lời bằng tiếng Việt, ngắn gọn và dễ hiểu.",
       "Hãy giải thích từng bước, nêu rõ kiến thức/công thức liên quan, và chỉ ra lỗi sai thường gặp khi phù hợp.",
       "Không bịa đặt dữ kiện. Nếu chưa chắc chắn, hãy nói rõ.",
+      "Mọi công thức toán học, ký hiệu và biểu thức phải viết bằng LaTeX: dùng $...$ cho công thức trên cùng dòng và $$...$$ cho công thức đứng riêng một dòng (ví dụ $x^2 - 4x + 3 = 0$, $\\int_0^1 f(x)\\,dx$). Không dùng ký tự Unicode thay cho công thức phức tạp.",
       "",
       "BỐI CẢNH CÂU HỎI:",
-      `Môn: ${ctx.subjectLabel} - Lớp ${ctx.grade} - Chuyên đề: ${ctx.topic}`,
+      `Môn: ${ctx.subjectLabel}${ctx.grade ? ` - Lớp ${ctx.grade}` : ""} - Chuyên đề: ${ctx.topic}`,
       `Câu hỏi: ${ctx.questionText}`,
       ctx.optionsText ? `Các lựa chọn:\n${ctx.optionsText}` : "",
       `Đáp án đúng: ${ctx.correctAnswerText}`,
