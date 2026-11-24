@@ -81,7 +81,7 @@ questionBank.push(
     ["Tạo ra ánh sáng", "Dự trữ khí CO₂", "Truyền xung thần kinh", "Sản xuất hormone sinh dục ở mọi tế bào", "Cố định đạm khí quyển"],
     "Ti thể tạo ATP, ribosome tổng hợp protein, lục lạp quang hợp, lysosome phân giải chất thải, nhân chứa DNA."),
 
-  dd("phy_11_05", 11, "Physics", "Dao động điều hòa",
+  dd("phy_11_301", 11, "Physics", "Dao động điều hòa",
     "Kéo mỗi đáp án vào đại lượng hoặc công thức tương ứng.",
     [
       ["Biên độ A", "Độ lệch cực đại so với vị trí cân bằng"],
@@ -93,7 +93,7 @@ questionBank.push(
     ["2A", "f = T", "ω = T/2π", "Vận tốc cực đại tại biên", "Gia tốc bằng 0 tại biên"],
     "Trong một chu kì vật đi được 4A. Tại biên vận tốc bằng 0 còn gia tốc cực đại, nên hai phát biểu gây nhiễu là sai."),
 
-  dd("phy_11_06", 11, "Physics", "Điện trường",
+  dd("phy_11_302", 11, "Physics", "Điện trường",
     "Kéo mỗi công thức hoặc đơn vị vào nội dung tương ứng.",
     [
       ["Cường độ điện trường E", "E = F/q"],
@@ -628,6 +628,8 @@ const DIFFICULTY_BY_ID = {
   phy_11_287: "easy", phy_11_288: "easy", phy_11_289: "medium", phy_11_290: "easy", phy_11_291: "medium", phy_11_292: "medium",
   phy_11_293: "easy", phy_11_294: "easy", phy_11_295: "easy", phy_11_296: "easy", phy_11_297: "medium", phy_11_298: "easy",
   phy_11_299: "medium", phy_11_300: "medium",
+  // Hai câu kéo thả từng trùng id với phy_11_05 / phy_11_06 (trắc nghiệm) nên được đổi id.
+  phy_11_301: "easy", phy_11_302: "easy",
 };
 
 questionBank.forEach((q) => {
