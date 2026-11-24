@@ -56,7 +56,13 @@
     solid: "bg-violet-600 text-white", text: "text-violet-600", bar: "bg-violet-500",
   };
   const subjOf = (key) => SUBJECTS[key] || GENERAL_SUBJECT;
-  const topicHref = (r) => (r.aiQuiz ? `#/ai-quiz/${r.aiQuiz}?topic=${encodeURIComponent(r.topic)}` : practiceHref(r.subject, r.grade, r.topic));
+  // Câu hỏi của đề chuẩn hóa có thể không gắn lớp: khi đó dẫn về ngân hàng câu hỏi của môn.
+  const topicHref = (r) =>
+    r.aiQuiz
+      ? `#/ai-quiz/${r.aiQuiz}?topic=${encodeURIComponent(r.topic)}`
+      : r.grade && SUBJECTS[r.subject]
+        ? practiceHref(r.subject, r.grade, r.topic)
+        : SUBJECTS[r.subject] ? `#/bank/${r.subject}` : "#/bank";
 
   const topicIndex = (() => {
     const idx = {};
@@ -125,19 +131,40 @@
   const normalizeShort = (s) =>
     fold(String(s ?? ""))
       .replace(/\s+/g, "")
+      .replace(/[\u2212\u2012\u2013\u2014]/g, "-") // dấu trừ kiểu “−”, “–”, “—” về “-”
       .replace(/,/g, ".")
       .replace(/[()₀-₉]/g, (c) => (/[₀-₉]/.test(c) ? String(c.charCodeAt(0) - 0x2080) : ""));
+
+  // Đọc một số do học sinh nhập: số nguyên, số âm, số thập phân dùng dấu phẩy hoặc dấu chấm
+  // (-12, +7, 2,5, 2.5, .5, -0,25). Trả về null nếu không phải một số hợp lệ.
+  const NUMBER_RE = /^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/;
+  function parseNumber(raw) {
+    const t = String(raw ?? "")
+      .replace(/\s+/g, "")
+      .replace(/[\u2212\u2012\u2013\u2014]/g, "-");
+    return NUMBER_RE.test(t) ? Number(t.replace(",", ".")) : null;
+  }
+
+  // Câu trả lời ngắn có đáp án là số (Toán, Lý, Hóa...) thì hiện quy ước nhập số và so sánh theo giá trị.
+  const isNumericAnswer = (q) => q.type === "short_answer" && parseNumber(q.correctAnswer) !== null;
+
+  // Đáp án số hiển thị theo thói quen Việt Nam (dấu phẩy thập phân); đáp án chữ giữ nguyên.
+  const displayAnswer = (q) =>
+    isNumericAnswer(q) ? String(q.correctAnswer).trim().replace(/[\u2212\u2012\u2013\u2014]/g, "-").replace(".", ",") : q.correctAnswer;
 
   function matchShortAnswer(q, answer) {
     const given = normalizeShort(answer);
     if (!given) return false;
-    return [q.correctAnswer, ...(q.acceptedAnswers || [])].some((candidate) => {
-      const target = normalizeShort(candidate);
-      if (target === given) return true;
-      const a = Number(given);
-      const b = Number(target);
-      return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-9;
-    });
+    const candidates = [q.correctAnswer, ...(q.acceptedAnswers || [])];
+    const givenNumber = parseNumber(answer);
+    if (givenNumber !== null) {
+      // Đáp án số: 2,5 và 2.5 và 2,50 đều bằng nhau; -12 và −12 đều bằng nhau.
+      return candidates.some((candidate) => {
+        const n = parseNumber(candidate);
+        return n !== null && Math.abs(n - givenNumber) < 1e-9;
+      });
+    }
+    return candidates.some((candidate) => normalizeShort(candidate) === given);
   }
 
   function gradeQuestion(q, answer) {
@@ -299,12 +326,34 @@
   /* =====================================================================
    * Question rendering
    * ===================================================================== */
+  // Mô tả từng phần theo dạng câu hỏi. Số La Mã của phần được đánh theo thứ tự các phần CÓ trong đề
+  // (xem examSections), nên đề thiếu dạng nào thì phần đó không hiện và các phần còn lại vẫn liền mạch.
   const SECTION_INFO = {
-    multiple_choice: ["PHẦN I", "Câu trắc nghiệm nhiều phương án lựa chọn. Mỗi câu chỉ chọn một phương án."],
-    true_false: ["PHẦN II", "Câu trắc nghiệm đúng sai. Trong mỗi ý a), b), c), d) của mỗi câu, chọn Đúng hoặc Sai."],
-    short_answer: ["PHẦN III", "Câu trắc nghiệm trả lời ngắn. Chỉ nhập đáp án cuối cùng."],
-    drag_drop: ["PHẦN IV", "Câu hỏi kéo thả. Kéo (hoặc chạm) mỗi đáp án vào ô tương ứng. Kho đáp án có cả đáp án nhiễu."],
+    multiple_choice: "Câu trắc nghiệm nhiều phương án lựa chọn. Mỗi câu chỉ chọn một phương án.",
+    true_false: "Câu trắc nghiệm đúng sai. Trong mỗi ý a), b), c), d) của mỗi câu, chọn Đúng hoặc Sai.",
+    short_answer: "Câu trắc nghiệm trả lời ngắn. Chỉ nhập đáp án cuối cùng.",
+    drag_drop: "Câu hỏi kéo thả. Kéo (hoặc chạm) mỗi đáp án vào ô tương ứng. Kho đáp án có cả đáp án nhiễu.",
   };
+  const SA_NUMERIC_INFO = "Câu trắc nghiệm trả lời ngắn. Chỉ nhập số (số nguyên, số âm hoặc số thập phân), dùng dấu phẩy hoặc dấu chấm cho số thập phân.";
+  const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
+
+  // Gom danh sách câu hỏi (đã sắp theo dạng) thành các phần; dạng nào không có câu hỏi thì không tạo phần.
+  function examSections(list) {
+    const groups = [];
+    list.forEach((q) => {
+      let group = groups.find((g) => g.type === q.type);
+      if (!group) groups.push((group = { type: q.type, questions: [] }));
+      group.questions.push(q);
+    });
+    return groups.map((g, i) => ({
+      ...g,
+      title: `PHẦN ${ROMAN[i] || i + 1}`,
+      desc:
+        g.type === "short_answer" && g.questions.every(isNumericAnswer)
+          ? SA_NUMERIC_INFO
+          : SECTION_INFO[g.type] || "",
+    }));
+  }
 
   function mcBody(q, a, locked) {
     const options = ["A", "B", "C", "D"]
@@ -349,12 +398,35 @@
     return `<div class="tf-table mt-4">${rows}</div>`;
   }
 
+  const SA_HINT_NUMBER = "Chỉ nhập số, dùng dấu phẩy hoặc dấu chấm cho số thập phân (ví dụ: -12; 2,5 hoặc 2.5).";
+  const SA_HINT_TEXT = "Chỉ nhập đáp án cuối cùng, không phân biệt chữ hoa, chữ thường.";
+
   function saBody(q, a, locked, g) {
-    const cls = locked && g.answered ? (g.fraction === 1 ? "is-correct" : "is-wrong") : "";
+    // Xem lại bài / sau khi kiểm tra: đặt bài làm của học sinh cạnh đáp án chuẩn.
+    if (locked) {
+      const state = g.answered ? (g.fraction === 1 ? "is-correct" : "is-wrong") : "is-blank";
+      const icon = !g.answered ? "fa-circle-minus text-slate-400" : g.fraction === 1 ? "fa-circle-check text-emerald-600" : "fa-circle-xmark text-rose-500";
+      return `<div class="sa-review mt-4" role="group" aria-label="So sánh bài làm với đáp án chuẩn">
+        <div class="sa-box ${state}"><p class="sa-box-label"><i class="fa-solid ${icon}" aria-hidden="true"></i> Bài làm của bạn</p><p class="sa-box-value no-math">${g.answered ? esc(String(a).trim()) : "Chưa trả lời"}</p></div>
+        <div class="sa-box is-key"><p class="sa-box-label"><i class="fa-solid fa-key text-emerald-600" aria-hidden="true"></i> Đáp án chuẩn</p><p class="sa-box-value">${esc(displayAnswer(q))}</p></div>
+      </div>`;
+    }
+    const numeric = isNumericAnswer(q);
     return `<div class="sa-wrap mt-4">
       <label class="mb-1.5 block text-sm font-semibold text-slate-600" for="sa_${q.id}">Đáp án của bạn</label>
-      <input id="sa_${q.id}" type="text" autocomplete="off" spellcheck="false" class="field sa-input ${cls}" data-q="${q.id}" value="${esc(a ?? "")}" placeholder="Chỉ nhập đáp án cuối cùng" ${locked ? "disabled" : ""}>
+      <input id="sa_${q.id}" type="text" autocomplete="off" spellcheck="false" class="field sa-input" data-q="${q.id}" data-numeric="${numeric}" value="${esc(a ?? "")}" placeholder="${numeric ? "Nhập số, ví dụ: -12 hoặc 2,5" : "Chỉ nhập đáp án cuối cùng"}" aria-describedby="sahint_${q.id}">
+      <p id="sahint_${q.id}" class="sa-hint mt-1.5 flex gap-1.5 text-xs leading-relaxed text-slate-500"><i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true"></i><span>${numeric ? SA_HINT_NUMBER : SA_HINT_TEXT}</span></p>
+      <p id="sawarn_${q.id}" class="sa-warn mt-1 hidden text-xs font-semibold text-rose-600" role="alert"><i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Đáp án này chưa phải là một số hợp lệ. Hãy nhập số như -12 hoặc 2,5.</p>
     </div>`;
+  }
+
+  // Cảnh báo nhẹ ngay khi gõ nếu câu cần đáp án số mà nội dung nhập chưa phải là số.
+  function validateShortInput(input) {
+    const warn = $(`#sawarn_${input.dataset.q}`);
+    if (!warn || input.dataset.numeric !== "true") return;
+    const bad = input.value.trim() !== "" && parseNumber(input.value) === null;
+    warn.classList.toggle("hidden", !bad);
+    input.setAttribute("aria-invalid", String(bad));
   }
 
   const ddCache = new Map();
@@ -441,7 +513,7 @@
     let detail = "";
     if (q.type === "true_false" || q.type === "drag_drop") {
       detail = `<p class="text-sm text-slate-600">Đúng <strong>${g.c}/${g.n}</strong> ${q.type === "drag_drop" ? "ô" : "ý"} · <strong>${fmtScore(g.fraction)}</strong> điểm cho câu này</p>`;
-    } else if (state !== "ok") {
+    } else if (state !== "ok" && q.type !== "short_answer") {
       detail = `<p class="text-sm text-slate-600">Đáp án đúng: <strong class="text-slate-900">${esc(correctText(q))}</strong></p>`;
     }
 
@@ -478,7 +550,7 @@
     const meta = paper
       ? `<span class="${tag}">${QUESTION_TYPES[q.type].label}</span>`
       : `<span class="rounded-md px-2 py-0.5 text-xs font-bold ${subj.badge}"><i class="fa-solid ${subj.icon} mr-1" aria-hidden="true"></i>${subj.label}</span>
-         <span class="${tag}">Lớp ${q.grade}</span>
+         ${q.grade ? `<span class="${tag}">Lớp ${q.grade}</span>` : ""}
          <span class="${tag}">${esc(q.topic)}</span>
          <span class="${tag}">${QUESTION_TYPES[q.type].label}</span>
          ${diffBadge(q)}${spent}`;
@@ -507,19 +579,15 @@
   }
 
   function cardsHtml(list, { sections = true } = {}) {
-    let html = "";
-    let lastType = null;
-    list.forEach((q) => {
-      if (sections && q.type !== lastType) {
-        if (lastType !== null) html += "</section>";
-        const [title, desc] = SECTION_INFO[q.type];
-        html += `<section class="paper-section"><h2 class="text-sm font-extrabold uppercase tracking-wide text-slate-900">${title}. <span class="font-semibold normal-case text-slate-600">${desc}</span></h2>`;
-        lastType = q.type;
-      }
-      html += cardHtml(q, ctx.list.indexOf(q) + 1);
-    });
-    if (sections && lastType !== null) html += "</section>";
-    return html;
+    if (!sections) return list.map((q) => cardHtml(q, ctx.list.indexOf(q) + 1)).join("");
+    return examSections(list)
+      .map(
+        (sec) => `<section class="paper-section" aria-label="${sec.title}">
+          <h2 class="text-sm font-extrabold uppercase tracking-wide text-slate-900">${sec.title}. <span class="font-semibold normal-case text-slate-600">${sec.desc}</span> <span class="ml-1 whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold normal-case text-slate-600">${sec.questions.length} câu</span></h2>
+          ${sec.questions.map((q) => cardHtml(q, ctx.list.indexOf(q) + 1)).join("")}
+        </section>`
+      )
+      .join("");
   }
 
   /* =====================================================================
@@ -657,28 +725,40 @@
    * Home
    * ===================================================================== */
   function renderHome() {
+    // Bước 1: danh sách gọn 5 môn (số câu và khối lớp tính từ dữ liệu thực tế).
+    const gradeLabel = `Lớp ${GRADES.join(", ")}`;
     const subjectCards = Object.entries(SUBJECTS)
       .map(([key, s]) => {
         const n = questionBank.filter((q) => q.subject === key).length;
-        return `<a href="#/bank/${key}" class="card card-hover group flex items-center gap-4 p-4">
-          <span class="flex h-12 w-12 flex-none items-center justify-center rounded-xl text-xl ${s.solid}"><i class="fa-solid ${s.icon}" aria-hidden="true"></i></span>
-          <span class="min-w-0"><span class="block font-bold text-slate-900">${s.label}</span><span class="block text-sm text-slate-500">${n} câu · Lớp 10, 11, 12</span></span>
-          <i class="fa-solid fa-arrow-right ml-auto text-slate-300 transition group-hover:translate-x-1 group-hover:text-indigo-600" aria-hidden="true"></i>
+        return `<a href="#/bank/${key}" class="card card-hover group flex items-center gap-3 px-3.5 py-3">
+          <span class="flex h-10 w-10 flex-none items-center justify-center rounded-xl text-lg ${s.solid}"><i class="fa-solid ${s.icon}" aria-hidden="true"></i></span>
+          <span class="min-w-0 flex-1"><span class="block font-bold leading-tight text-slate-900">${s.label}</span><span class="mt-0.5 block text-xs text-slate-500">${n} câu · ${gradeLabel}</span></span>
+          <i class="fa-solid fa-arrow-right flex-none text-slate-300 transition group-hover:translate-x-1 group-hover:text-indigo-600" aria-hidden="true"></i>
         </a>`;
       })
       .join("");
+
+    // H1: tên viết tắt của từng môn, màu lấy từ cấu hình môn học; mỗi từ không bị ngắt dòng giữa chừng.
+    const shortNames = { Math: "Toán", Physics: "Lý", Chemistry: "Hóa", Biology: "Sinh", English: "Anh" };
+    const subjectKeys = Object.keys(SUBJECTS);
+    const heroSubjects = subjectKeys
+      .map(
+        (key, i) =>
+          `<span class="whitespace-nowrap"><span class="${SUBJECTS[key].text}">${shortNames[key] || SUBJECTS[key].label}</span>${i < subjectKeys.length - 1 ? "," : ""}</span>`
+      )
+      .join(" ");
 
     view.innerHTML = `
     <section class="hero-bg">
       <div class="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-20 pt-14 lg:grid-cols-[1.05fr_.95fr] lg:pt-20">
         <div>
           <ul class="flex flex-wrap gap-2" aria-label="Điểm nổi bật">
-            <li class="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200"><i class="fa-solid fa-flask text-indigo-600" aria-hidden="true"></i>3 môn cốt lõi</li>
+            <li class="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200"><i class="fa-solid fa-layer-group text-indigo-600" aria-hidden="true"></i>5 môn cốt lõi</li>
             <li class="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200"><i class="fa-solid fa-graduation-cap text-indigo-600" aria-hidden="true"></i>Chương trình THPT</li>
             <li class="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200"><i class="fa-solid fa-infinity text-indigo-600" aria-hidden="true"></i>Luyện tập miễn phí không giới hạn</li>
           </ul>
-          <h1 class="mt-6 text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 sm:text-5xl lg:text-[3.4rem]">
-            Chinh phục <span class="text-sky-600">Lý</span>, <span class="text-amber-500">Hóa</span>, <span class="text-emerald-600">Sinh</span> cùng đề thi như thật.
+          <h1 class="mt-6 text-balance text-4xl font-extrabold leading-[1.12] tracking-tight text-slate-900 sm:text-5xl lg:text-[3.25rem]">
+            Chinh phục ${heroSubjects} cùng đề thi như thật.
           </h1>
           <p class="mt-5 max-w-xl text-lg leading-relaxed text-slate-600">
             Ngân hàng câu hỏi phân loại theo chuyên đề, đề thi cuộn dọc như đề giấy có đồng hồ đếm ngược, chấm điểm thang 10 và gia sư AI giải thích từng câu.
@@ -691,7 +771,7 @@
           <dl class="mt-10 grid max-w-md grid-cols-3 gap-4 border-t border-slate-200 pt-6">
             <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Câu hỏi</dt><dd class="mt-1 text-2xl font-extrabold text-slate-900">${questionBank.length}</dd></div>
             <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Chuyên đề</dt><dd class="mt-1 text-2xl font-extrabold text-slate-900">${topicCount}</dd></div>
-            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Đề thi</dt><dd class="mt-1 text-2xl font-extrabold text-slate-900">${mockExams.length}</dd></div>
+            <div><dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Đề thi</dt><dd class="mt-1 text-2xl font-extrabold text-slate-900">${mockExams.filter(isExamVisible).length}</dd></div>
           </dl>
         </div>
 
@@ -805,33 +885,33 @@
     <section class="mx-auto max-w-6xl px-4 pt-20" aria-labelledby="flow-title">
       <div class="max-w-2xl"><p class="text-sm font-bold uppercase tracking-wide text-indigo-600">Lộ trình</p>
         <h2 id="flow-title" class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Học theo 3 bước đơn giản</h2></div>
-      <ol class="mt-8 grid gap-4 lg:grid-cols-3">
-        <li class="card relative p-6">
+      <ol class="mt-8 grid gap-4 lg:grid-cols-2">
+        <li class="card p-6 lg:row-span-2">
           <span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-extrabold text-white">1</span>
           <h3 class="mt-4 text-lg font-bold text-slate-900">Chọn môn học</h3>
           <p class="mt-1.5 text-sm leading-relaxed text-slate-600">Bắt đầu với môn bạn muốn cải thiện nhất.</p>
-          <div class="mt-4 grid gap-2.5">${subjectCards}</div>
+          <div class="mt-5 grid gap-2.5">${subjectCards}</div>
         </li>
-        <li class="card p-6">
+        <li class="card flex flex-col p-6">
           <span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-extrabold text-white">2</span>
           <h3 class="mt-4 text-lg font-bold text-slate-900">Luyện tập theo chuyên đề</h3>
           <p class="mt-1.5 text-sm leading-relaxed text-slate-600">Truy cập ngân hàng câu hỏi, tìm chuyên đề và tập trung vào phần kiến thức còn yếu.</p>
-          <a href="#/bank" class="btn btn-secondary mt-5"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>Mở ngân hàng câu hỏi</a>
+          <div class="mt-auto pt-5"><a href="#/bank" class="btn btn-secondary"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>Mở ngân hàng câu hỏi</a></div>
         </li>
-        <li class="card p-6">
+        <li class="card flex flex-col p-6">
           <span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-extrabold text-white">3</span>
           <h3 class="mt-4 text-lg font-bold text-slate-900">Thi thử và thi thật</h3>
           <p class="mt-1.5 text-sm leading-relaxed text-slate-600">Làm đề có bấm giờ, ước tính điểm thang 10 và biết chuyên đề nào cần tập trung thêm.</p>
-          <a href="#/exams" class="btn btn-secondary mt-5"><i class="fa-regular fa-clock" aria-hidden="true"></i>Xem danh sách đề thi</a>
+          <div class="mt-auto pt-5"><a href="#/exams" class="btn btn-secondary"><i class="fa-regular fa-clock" aria-hidden="true"></i>Xem danh sách đề thi</a></div>
         </li>
       </ol>
     </section>
 
     <section class="mx-auto mt-20 max-w-6xl px-4">
-      <div class="flex flex-col items-start justify-between gap-6 rounded-3xl bg-slate-900 p-8 sm:flex-row sm:items-center sm:p-12">
-        <div><h2 class="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">Sẵn sàng cho đề thi tiếp theo?</h2>
-          <p class="mt-2 max-w-lg text-slate-300">Làm thử một đề ngay bây giờ, không cần đăng ký.</p></div>
-        <a href="#/exams" class="btn btn-lg flex-none bg-white text-slate-900 hover:bg-indigo-50">Làm đề thi thử<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+      <div class="flex flex-col items-start justify-between gap-6 rounded-3xl border border-slate-200 p-8 sm:flex-row sm:items-center sm:p-12" style="background:radial-gradient(30rem 16rem at 100% 0%,rgba(99,102,241,.13),transparent 65%),linear-gradient(135deg,#F5F7FF 0%,#FFFFFF 60%)">
+        <div><h2 class="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Sẵn sàng cho đề thi tiếp theo?</h2>
+          <p class="mt-2 max-w-lg text-slate-600">Làm thử một đề ngay bây giờ, không cần đăng ký.</p></div>
+        <a href="#/exams" class="btn btn-primary btn-lg flex-none">Làm đề thi thử<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
       </div>
     </section>`;
   }
@@ -842,7 +922,7 @@
   const bankFilter = { grade: "all", levels: [] };
 
   function renderBank(subjectKey) {
-    const subject = SUBJECTS[subjectKey] ? subjectKey : "Physics";
+    const subject = SUBJECTS[subjectKey] ? subjectKey : DEFAULT_SUBJECT;
     const s = SUBJECTS[subject];
     let query = "";
     let shownQuestions = [];
@@ -1436,11 +1516,15 @@
   function renderExams() {
     const history = Store.list();
     const kinds = [["all", "Tất cả"], ["mock", "Đề thi thử"], ["real", "Đề minh họa chính thức"]];
-    const subjects = [["all", "Mọi môn"], ["Physics", "Vật lí"], ["Chemistry", "Hóa học"], ["Biology", "Sinh học"], ["Mixed", "Tổng hợp"]];
+    const subjects = [["all", "Mọi môn"], ...Object.entries(SUBJECTS).map(([k, sub]) => [k, sub.label])];
     const chip = (active) => `rounded-full px-3.5 py-1.5 text-sm font-semibold transition ${active ? "bg-slate-900 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-indigo-300"}`;
 
+    // Chỉ hiển thị nhóm đề đang bật (hiện là "subject"); đề chuẩn hóa ĐGNL/TSA/HSA sẽ mở ở giai đoạn sau.
     const exams = mockExams.filter(
-      (e) => (examFilter.kind === "all" || e.kind === examFilter.kind) && (examFilter.subject === "all" || e.subject === examFilter.subject)
+      (e) =>
+        isExamVisible(e) &&
+        (examFilter.kind === "all" || e.kind === examFilter.kind) &&
+        (examFilter.subject === "all" || e.subject === examFilter.subject)
     );
 
     const resume =
@@ -1552,8 +1636,15 @@
     ctx = { mode: "exam", answers: session.answers, checked: {}, list };
     const user = Auth.user;
 
-    const dots = (extra = "") =>
-      list.map((q, i) => `<button type="button" class="nav-dot ${extra}" data-action="goto-q" data-q="${q.id}" data-nav-q="${q.id}" aria-label="Đến câu ${i + 1}">${i + 1}</button>`).join("");
+    const dot = (q) => {
+      const n = list.indexOf(q) + 1;
+      return `<button type="button" class="nav-dot" data-action="goto-q" data-q="${q.id}" data-nav-q="${q.id}" aria-label="Đến câu ${n}">${n}</button>`;
+    };
+    const dots = () => list.map(dot).join("");
+    // Bảng bên phải: mỗi phần có trong đề một nhóm số câu (phần không có câu hỏi thì không hiện).
+    const groupedDots = examSections(list)
+      .map((sec) => `<div class="mt-3 first:mt-3"><p class="text-xs font-bold text-slate-500">${sec.title} · ${sec.questions.length} câu</p><div class="mt-1.5 grid grid-cols-5 gap-2">${sec.questions.map(dot).join("")}</div></div>`)
+      .join("");
 
     view.innerHTML = `
     <div class="exam-header sticky top-0 z-40">
@@ -1589,7 +1680,7 @@
       <aside class="hidden lg:sticky lg:top-28 lg:block" aria-label="Điều hướng câu hỏi">
         <div class="card p-4">
           <h2 class="text-sm font-extrabold text-slate-900">Danh sách câu hỏi</h2>
-          <div class="mt-3 grid grid-cols-5 gap-2">${dots()}</div>
+          ${groupedDots}
           <div class="mt-4 flex items-center gap-4 text-xs text-slate-500"><span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded bg-indigo-600"></span>Đã làm</span><span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-slate-300 bg-white"></span>Chưa làm</span></div>
         </div>
       </aside>
@@ -1717,7 +1808,7 @@
         const tone = r.accuracy >= 80 ? "bg-emerald-500" : r.accuracy >= 60 ? "bg-amber-500" : "bg-rose-500";
         return `<li class="py-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="min-w-0 text-sm font-semibold text-slate-900"><span class="mr-1.5 rounded px-1.5 py-0.5 text-xs font-bold ${s.badge}">${s.label} ${r.grade}</span>${esc(r.topic)}
+            <p class="min-w-0 text-sm font-semibold text-slate-900"><span class="mr-1.5 rounded px-1.5 py-0.5 text-xs font-bold ${s.badge}">${s.label}${r.grade ? ` ${r.grade}` : ""}</span>${esc(r.topic)}
               ${r.accuracy < 60 ? '<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-bold text-rose-700">Cần tập trung</span>' : ""}</p>
             <span class="text-sm font-bold text-slate-700">${fmtPercent(r.accuracy)}</span>
           </div>
@@ -1872,8 +1963,14 @@
    * ===================================================================== */
   let chat = null;
 
+  // Công thức ($...$, $$...$$, \(...\), \[...\]) được cất đi trước khi định dạng markdown rồi trả lại nguyên văn,
+  // để các ký tự như * hoặc _ trong công thức không bị biến thành chữ đậm/nghiêng. math.js sẽ render sau.
+  const MATH_SPAN = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$(?:\\.|[^$\\\n])+\$/g;
+
   function mdLite(text) {
-    const lines = esc(text)
+    const stash = [];
+    const safe = String(text).replace(MATH_SPAN, (m) => `\u0000${stash.push(m) - 1}\u0000`);
+    const lines = esc(safe)
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .split("\n");
@@ -1891,7 +1988,8 @@
         if (line.trim()) out += `<p class="mb-1.5 last:mb-0">${line}</p>`;
       }
     }
-    return inList ? out + "</ul>" : out;
+    out = inList ? out + "</ul>" : out;
+    return out.replace(/\u0000(\d+)\u0000/g, (_, i) => esc(stash[Number(i)]));
   }
 
   function openAiChat(qid) {
@@ -1919,7 +2017,7 @@
         <div class="border-b border-slate-100 p-5 pb-4">
           <div class="flex items-start justify-between gap-3">
             <div class="flex items-center gap-3"><span class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i></span>
-              <div><h2 id="modal-title" class="font-extrabold text-slate-900">Gia sư AI</h2><p class="text-xs text-slate-500">${subjOf(q.subject).label} · Lớp ${q.grade} · ${esc(q.topic)}</p></div></div>
+              <div><h2 id="modal-title" class="font-extrabold text-slate-900">Gia sư AI</h2><p class="text-xs text-slate-500">${subjOf(q.subject).label}${q.grade ? ` · Lớp ${q.grade}` : ""} · ${esc(q.topic)}</p></div></div>
             <button type="button" data-action="close-modal" class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Đóng"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
           </div>
           <p class="mt-3 line-clamp-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">${esc(q.questionText)}</p>
@@ -1998,7 +2096,7 @@
     $("#mobile-menu").classList.add("hidden");
     $("#menu-toggle").setAttribute("aria-expanded", "false");
 
-    const titles = { "": "LabLuyen – Luyện thi Lý, Hóa, Sinh THPT", bank: "Ngân hàng câu hỏi – LabLuyen", practice: "Luyện tập – LabLuyen", exams: "Đề thi – LabLuyen", take: "Đang làm bài – LabLuyen", result: "Kết quả – LabLuyen", history: "Lịch sử làm bài – LabLuyen", "ai-quiz": "Tạo quiz bằng AI – LabLuyen", stats: "Thống kê kiến thức – LabLuyen", live: "Đấu trắc nghiệm trực tiếp – LabLuyen", about: "Giới thiệu – LabLuyen", profile: "Thành tích – LabLuyen" };
+    const titles = { "": "LabLuyen – Luyện thi Toán, Lý, Hóa, Sinh, Anh THPT", bank: "Ngân hàng câu hỏi – LabLuyen", practice: "Luyện tập – LabLuyen", exams: "Đề thi – LabLuyen", take: "Đang làm bài – LabLuyen", result: "Kết quả – LabLuyen", history: "Lịch sử làm bài – LabLuyen", "ai-quiz": "Tạo quiz bằng AI – LabLuyen", stats: "Thống kê kiến thức – LabLuyen", live: "Đấu trắc nghiệm trực tiếp – LabLuyen", about: "Giới thiệu – LabLuyen", profile: "Thành tích – LabLuyen" };
     document.title = titles[name] || titles[""];
     if (name !== "take" && name !== "practice" && name !== "result") ctx = { mode: "none", answers: {}, checked: {}, list: [] };
 
@@ -2165,8 +2263,10 @@
 
   document.addEventListener("input", (e) => {
     const t = e.target;
-    if (t.matches("input.sa-input[data-q]")) setAnswer(t);
-    else if (t.id === "custom-min") syncTimeChips();
+    if (t.matches("input.sa-input[data-q]")) {
+      setAnswer(t);
+      validateShortInput(t);
+    } else if (t.id === "custom-min") syncTimeChips();
     else if (t.id === "chat-input") {
       t.style.height = "auto";
       t.style.height = `${Math.min(t.scrollHeight, 128)}px`;
