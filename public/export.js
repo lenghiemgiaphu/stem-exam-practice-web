@@ -3,7 +3,7 @@
   "use strict";
 
   const App = window.LabApp;
-  const { $, esc, openModal, closeModal, toast } = App;
+  const { $, esc, openModal, closeModal, toast, rich, displayText, passageOf, passageBodyHtml, passageKind } = App;
 
   const PART_INFO = {
     multiple_choice: "Câu trắc nghiệm nhiều phương án lựa chọn. Mỗi câu chỉ chọn một phương án.",
@@ -44,7 +44,7 @@
       .replace(/[^a-z0-9]+/gi, "-")
       .replace(/^-|-$/g, "")
       .toLowerCase() || "de-thi";
-  const text = (s) => esc(s).replace(/\n/g, "<br>");
+  const text = (s) => rich(s).replace(/\n/g, "<br>");
   const letter = (i) => String.fromCharCode(65 + i);
   const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
@@ -58,12 +58,20 @@
       list = list.filter((q) => keep.has(q));
     }
     if (shuffleOrder) list = shuffle(list);
+    // Các câu cùng đoạn văn luôn đứng liền nhau (tại vị trí câu đầu tiên của nhóm) để đoạn văn chỉ in một lần.
+    const placed = new Set();
+    list = list.flatMap((q) => {
+      if (placed.has(q) || !q.passageId) return placed.has(q) ? [] : [q];
+      const group = list.filter((x) => x.passageId === q.passageId && x.type === q.type);
+      group.forEach((x) => placed.add(x));
+      return group;
+    });
     const order = Object.keys(QUESTION_TYPES).sort((a, b) => QUESTION_TYPES[a].order - QUESTION_TYPES[b].order);
     return order.map((type) => ({ type, items: list.filter((q) => q.type === type) })).filter((g) => g.items.length);
   }
 
   function renderQuestion(q, n) {
-    const head = `<p class="q"><b>Câu ${n}.</b> ${text(q.questionText)}</p>`;
+    const head = `<p class="q"><b>Câu ${n}.</b> ${text(displayText(q, n))}</p>`;
     if (q.type === "multiple_choice") {
       const entries = Object.entries(q.options);
       const longest = Math.max(...entries.map(([, v]) => String(v).length));
@@ -126,14 +134,40 @@
     .key td{padding:2pt 6pt 2pt 0;vertical-align:top}
     .sol{margin:4pt 0}
     .sol i{color:#333}
+    .passage{margin:8pt 0 4pt}
+    .pins{font-style:italic;font-weight:bold;margin:0 0 3pt;page-break-after:avoid}
+    .pbox{border:1px solid #000;padding:6pt 9pt;margin:0 0 6pt}
+    .pbox p{margin:0 0 4pt;text-align:justify}
+    .pbox h3{text-align:center;font-size:13pt;margin:0 0 4pt}
+    .pblank{font-weight:bold}
+    .pblank-wrap{white-space:nowrap}
     @page{size:A4;margin:2cm}
   `;
 
   function buildHtml(o, groups, { word }) {
     let n = 0;
+    // Số câu của từng câu hỏi trong đề in (dùng để ghi “(21) ______” ở chỗ trống của bài điền từ).
+    const numOf = new Map();
+    groups.forEach((g) => g.items.forEach((q) => numOf.set(q, numOf.size + 1)));
+    const allItems = groups.flatMap((g) => g.items);
+    const passageBlock = (q) => {
+      const p = passageOf(q);
+      const kind = passageKind(p);
+      const members = allItems.filter((x) => x.passageId === q.passageId);
+      const nums = members.filter((x) => x.type === q.type).map((x) => numOf.get(x));
+      const range = nums.length > 1 ? `Câu ${Math.min(...nums)} – ${Math.max(...nums)}` : `Câu ${nums[0]}`;
+      return `<div class="passage"><p class="pins">${esc(p.instruction || kind.instruction)} (${range})</p><div class="pbox">${p.title ? `<h3>${text(p.title)}</h3>` : ""}${passageBodyHtml(p, { questions: members, numberOf: (x) => numOf.get(x), link: false })}</div></div>`;
+    };
     const body = groups
       .map((g, gi) => {
-        const qs = g.items.map((q) => renderQuestion(q, ++n)).join("");
+        let prevPassage = null;
+        const qs = g.items
+          .map((q) => {
+            const block = q.passageId && q.passageId !== prevPassage && passageOf(q) ? passageBlock(q) : "";
+            prevPassage = q.passageId || null;
+            return block + renderQuestion(q, ++n);
+          })
+          .join("");
         return `<p class="part">PHẦN ${ROMAN[gi]}.</p><p class="partnote">${esc(PART_INFO[g.type])}</p>${qs}`;
       })
       .join("");
