@@ -50,6 +50,15 @@
   const bankById = new Map(questionBank.map((q) => [q.id, q]));
   const examById = new Map(mockExams.map((e) => [e.examId, e]));
 
+  // Đoạn văn dùng chung (data-passages.js): các câu có cùng passageId hiển thị chung một khối đoạn văn.
+  const passageById = new Map((typeof passageBank !== "undefined" ? passageBank : []).map((p) => [p.passageId, p]));
+  const passageOf = (q) => (q && q.passageId ? passageById.get(q.passageId) || null : null);
+
+  // Văn bản có định dạng nhẹ: chỉ cho phép <u>, <b>, <i>, <em>, <strong>, <sup>, <sub> (phải có thẻ đóng),
+  // mọi thứ khác vẫn bị escape. Dùng cho đề bài, phương án, đoạn văn và lời giải (ví dụ gạch chân âm: b<u>oo</u>k).
+  const RICH_TAG = /&lt;(u|b|i|em|strong|sup|sub)&gt;([\s\S]*?)&lt;\/\1&gt;/g;
+  const rich = (s) => esc(s).replace(RICH_TAG, "<$1>$2</$1>");
+
   // AI-generated quizzes can cover any subject, so they fall back to a neutral style.
   const GENERAL_SUBJECT = {
     label: "Tổng hợp", icon: "fa-book-open", badge: "bg-violet-100 text-violet-700", soft: "bg-violet-50 text-violet-700 ring-violet-200",
@@ -94,13 +103,39 @@
       : "";
   };
 
-  const orderQuestions = (ids) =>
-    ids
+  // Sắp xếp theo dạng câu (trắc nghiệm → đúng/sai → trả lời ngắn → kéo thả), giữ thứ tự soạn đề trong từng dạng,
+  // và luôn xếp các câu cùng đoạn văn liền nhau (tại vị trí của câu đầu tiên trong nhóm).
+  const orderQuestions = (ids) => {
+    const sorted = ids
       .map((id) => bankById.get(id))
       .filter(Boolean)
       .map((q, i) => ({ q, i }))
       .sort((a, b) => QUESTION_TYPES[a.q.type].order - QUESTION_TYPES[b.q.type].order || a.i - b.i)
       .map((x) => x.q);
+    const out = [];
+    const placed = new Set();
+    sorted.forEach((q) => {
+      if (placed.has(q.id)) return;
+      const group = q.passageId ? sorted.filter((x) => x.passageId === q.passageId && x.type === q.type) : [q];
+      group.forEach((x) => {
+        out.push(x);
+        placed.add(x.id);
+      });
+    });
+    return out;
+  };
+
+  // “{{n}}” trong đề bài được thay bằng số câu đang hiển thị (bài điền từ: “Choose the best answer for blank {{n}}”).
+  const displayText = (q, num) => String(q.questionText ?? "").replace(/\{\{n\}\}/g, String(blankNumber(q, num)));
+
+  // Số hiển thị của một câu ở chỗ trống / đề bài: trong đề thi và xem lại là số câu trong đề (như đề thật);
+  // trong Luyện tập (danh sách có thể bị xáo trộn) là thứ tự chỗ trống trong đoạn văn.
+  function blankNumber(q, num) {
+    if (ctx && ctx.mode === "practice" && q.passageId) {
+      return q.blank ?? questionBank.filter((x) => x.passageId === q.passageId).indexOf(q) + 1;
+    }
+    return num ?? (ctx && ctx.list ? ctx.list.indexOf(q) + 1 : "");
+  }
 
   /* =====================================================================
    * History storage (per account, kept in this browser)
@@ -335,6 +370,7 @@
     drag_drop: "Câu hỏi kéo thả. Kéo (hoặc chạm) mỗi đáp án vào ô tương ứng. Kho đáp án có cả đáp án nhiễu.",
   };
   const SA_NUMERIC_INFO = "Câu trắc nghiệm trả lời ngắn. Chỉ nhập số (số nguyên, số âm hoặc số thập phân), dùng dấu phẩy hoặc dấu chấm cho số thập phân.";
+  const EN_MC_INFO = "Mark the letter A, B, C, or D on your answer sheet to indicate the correct answer to each of the following questions.";
   const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
 
   // Gom danh sách câu hỏi (đã sắp theo dạng) thành các phần; dạng nào không có câu hỏi thì không tạo phần.
@@ -351,7 +387,9 @@
       desc:
         g.type === "short_answer" && g.questions.every(isNumericAnswer)
           ? SA_NUMERIC_INFO
-          : SECTION_INFO[g.type] || "",
+          : g.type === "multiple_choice" && g.questions.every((q) => q.subject === "English")
+            ? EN_MC_INFO
+            : SECTION_INFO[g.type] || "",
     }));
   }
 
@@ -369,7 +407,7 @@
         }
         return `<label class="opt ${cls}">
           <input class="sr-only" type="radio" name="q_${q.id}" value="${k}" data-q="${q.id}" ${a === k ? "checked" : ""} ${locked ? "disabled" : ""}>
-          <span class="opt-key">${k}</span><span class="min-w-0 flex-1">${esc(q.options[k])}</span>${mark}
+          <span class="opt-key">${k}</span><span class="min-w-0 flex-1">${rich(q.options[k])}</span>${mark}
         </label>`;
       })
       .join("");
@@ -387,7 +425,7 @@
         const keyF = locked && !s.isTrue ? "is-key" : "";
         return `<div class="tf-row ${rowCls}">
           <span class="w-5 font-bold text-slate-500">${letter})</span>
-          <p class="min-w-0 flex-1 text-[.95rem] leading-relaxed">${esc(s.text)}</p>
+          <p class="min-w-0 flex-1 text-[.95rem] leading-relaxed">${rich(s.text)}</p>
           <div class="seg ${locked ? "is-locked" : ""}" role="radiogroup" aria-label="Đánh giá ý ${letter}">
             <label><input class="sr-only" type="radio" name="q_${q.id}_${i}" value="true" data-q="${q.id}" data-i="${i}" ${v === true ? "checked" : ""} ${locked ? "disabled" : ""}><span class="t ${keyT}">Đúng</span></label>
             <label><input class="sr-only" type="radio" name="q_${q.id}_${i}" value="false" data-q="${q.id}" data-i="${i}" ${v === false ? "checked" : ""} ${locked ? "disabled" : ""}><span class="f ${keyF}">Sai</span></label>
@@ -501,6 +539,38 @@
     return `<div class="mt-4 grid gap-3">${hint}<div class="dd-rows">${rows}</div>${bank}</div>`;
   }
 
+  // Đáp án đúng ở dạng hiển thị (có định dạng nhẹ), dùng cho khối giải thích có cấu trúc.
+  function correctDisplay(q) {
+    if (q.type === "multiple_choice") return `${q.correctAnswer}. ${q.options[q.correctAnswer]}`;
+    if (q.type === "short_answer") return displayAnswer(q);
+    return correctText(q);
+  }
+
+  // Lời giải: câu có q.explain (dữ liệu Tiếng Anh) hiện 3 khối rõ ràng
+  // “Đáp án đúng → Dịch nghĩa → Giải thích ngữ pháp / từ vựng”; câu khác giữ đoạn “Giải thích” như cũ.
+  function explainBlocks(q) {
+    const ex = q.explain;
+    if (!ex) return `<p class="mt-3 text-sm leading-relaxed text-slate-700"><strong class="text-slate-900">Giải thích:</strong> ${rich(q.explanation)}</p>`;
+    const body = (v) =>
+      Array.isArray(v)
+        ? `<ul class="mt-1 list-disc space-y-1 pl-5">${v.map((x) => `<li>${rich(x)}</li>`).join("")}</ul>`
+        : `<p>${rich(v)}</p>`;
+    const row = (icon, label, html) =>
+      `<div class="explain-row"><p class="explain-label"><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</p><div class="explain-text">${html}</div></div>`;
+    const rows = [];
+    if (q.type !== "drag_drop") rows.push(row("fa-circle-check text-emerald-600", "Đáp án đúng", `<p><strong class="text-slate-900">${rich(correctDisplay(q))}</strong></p>`));
+    if (ex.translation) rows.push(row("fa-language text-sky-600", "Dịch nghĩa", body(ex.translation)));
+    if (ex.grammar || (ex.vocab && ex.vocab.length))
+      rows.push(
+        row(
+          "fa-lightbulb text-amber-600",
+          "Giải thích ngữ pháp / từ vựng",
+          `${ex.grammar ? body(ex.grammar) : ""}${ex.vocab && ex.vocab.length ? `<p class="explain-sub">Từ vựng mở rộng</p>${body(ex.vocab)}` : ""}`
+        )
+      );
+    return `<div class="explain-grid mt-3">${rows.join("")}</div>`;
+  }
+
   function reviewPanel(q, a, g) {
     const state = !g.answered ? "blank" : g.fraction === 1 ? "ok" : g.fraction > 0 ? "partial" : "bad";
     const meta = {
@@ -513,7 +583,7 @@
     let detail = "";
     if (q.type === "true_false" || q.type === "drag_drop") {
       detail = `<p class="text-sm text-slate-600">Đúng <strong>${g.c}/${g.n}</strong> ${q.type === "drag_drop" ? "ô" : "ý"} · <strong>${fmtScore(g.fraction)}</strong> điểm cho câu này</p>`;
-    } else if (state !== "ok" && q.type !== "short_answer") {
+    } else if (state !== "ok" && q.type !== "short_answer" && !q.explain) {
       detail = `<p class="text-sm text-slate-600">Đáp án đúng: <strong class="text-slate-900">${esc(correctText(q))}</strong></p>`;
     }
 
@@ -525,7 +595,7 @@
     return `<div class="explain-box ${state} mt-4" role="status">
       <p class="flex items-center gap-2 font-bold text-slate-900"><i class="fa-solid ${meta[0]}" aria-hidden="true"></i>${meta[1]}</p>
       ${detail ? `<div class="mt-1">${detail}</div>` : ""}
-      <p class="mt-3 text-sm leading-relaxed text-slate-700"><strong class="text-slate-900">Giải thích:</strong> ${esc(q.explanation)}</p>
+      ${explainBlocks(q)}
       <div class="mt-3 flex flex-wrap gap-2">
         <button type="button" class="btn btn-sm bg-indigo-600 text-white hover:bg-indigo-700" data-action="ask-ai" data-q="${q.id}">
           <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Hỏi AI lý do
@@ -566,7 +636,7 @@
 
     return `<article id="card-${q.id}" class="question-card ${paper || practicing ? "" : "card"}" data-qid="${q.id}">
       ${head}
-      <p class="q-text ${practicing ? "" : "mt-3"}">${esc(q.questionText)}</p>
+      <p class="q-text ${practicing ? "" : "mt-3"}">${rich(displayText(q, num))}</p>
       ${body}${footer}
     </article>`;
   }
@@ -578,13 +648,86 @@
     el.outerHTML = cardHtml(q, ctx.list.indexOf(q) + 1);
   }
 
+  /* ---------- Đoạn văn dùng chung (Reading / Cloze) ---------- */
+  let passageSeq = 0;
+  const passageKind = (p) => (typeof PASSAGE_KINDS !== "undefined" && (PASSAGE_KINDS[p.kind] || PASSAGE_KINDS.reading)) || { label: "Reading passage", instruction: "" };
+
+  // Nội dung đoạn văn: tách đoạn, thay {{k}} bằng số câu thật; có thể bấm số để nhảy tới câu đó.
+  function passageBodyHtml(p, { questions, numberOf, link = true } = {}) {
+    const qs = questions || ctx.list.filter((x) => x.passageId === p.passageId);
+    const numOf = numberOf || ((q) => blankNumber(q));
+    const byBlank = new Map(qs.map((q, i) => [q.blank ?? i + 1, q]));
+    return String(p.passageContent ?? "")
+      .split(/\n\s*\n/)
+      .map((para) =>
+        rich(para.trim())
+          .replace(/\n/g, "<br>")
+          .replace(/\{\{(\d+)\}\}/g, (_, k) => {
+            const q = byBlank.get(Number(k));
+            const n = q ? numOf(q) : k;
+            const label = link && q
+              ? `<button type="button" class="pblank" data-action="goto-q" data-q="${q.id}" title="Đến câu ${n}">(${n})</button>`
+              : `<span class="pblank">(${n})</span>`;
+            return `<span class="pblank-wrap">${label}<span class="pblank-line" aria-hidden="true">______</span></span>`;
+          })
+      )
+      .map((html) => `<p>${html}</p>`)
+      .join("");
+  }
+
+  // Một khối đoạn văn + các câu hỏi dùng chung nó. layout: "exam" (2 cột, ghim đoạn văn ở màn hình rộng),
+  // "review" / "practice" (đoạn văn ở trên, có thể thu gọn).
+  function passageGroupHtml(p, qs, layout) {
+    const kind = passageKind(p);
+    const id = `pp${++passageSeq}`;
+    const nums = qs.map((q) => ctx.list.indexOf(q) + 1);
+    const range = nums.length > 1 ? `Câu ${Math.min(...nums)} – ${Math.max(...nums)}` : `Câu ${nums[0]}`;
+    const cards = qs.map((q) => cardHtml(q, ctx.list.indexOf(q) + 1)).join("");
+    return `<div class="passage-group is-${layout}" data-passage="${esc(p.passageId)}" data-gid="${id}" data-range="${range}">
+      <div class="passage-head">
+        <p class="passage-instruction">${rich(p.instruction || kind.instruction)}</p>
+        <span class="passage-range">${range}</span>
+      </div>
+      <div class="passage-layout">
+        <section class="passage-pane" aria-label="${esc(kind.label)}">
+          <header class="passage-bar">
+            <span class="passage-kind"><i class="fa-solid fa-book-open" aria-hidden="true"></i>${esc(kind.label)}</span>
+            <button type="button" class="passage-toggle" data-action="toggle-passage" aria-expanded="true" aria-controls="${id}"><span>Thu gọn</span><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>
+          </header>
+          <div class="passage-body" id="${id}" tabindex="0" role="region" aria-label="Nội dung đoạn văn">${p.title ? `<h3 class="passage-title">${rich(p.title)}</h3>` : ""}${passageBodyHtml(p)}</div>
+        </section>
+        <div class="passage-questions">${cards}</div>
+      </div>
+    </div>`;
+  }
+
+  // Duyệt danh sách câu hỏi: câu lẻ thành thẻ riêng, các câu liên tiếp cùng đoạn văn gom thành một khối.
+  function blocksHtml(questions, layout) {
+    let html = "";
+    let i = 0;
+    while (i < questions.length) {
+      const q = questions[i];
+      const p = passageOf(q);
+      if (!p) {
+        html += cardHtml(q, ctx.list.indexOf(q) + 1);
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < questions.length && questions[j].passageId === q.passageId) j++;
+      html += passageGroupHtml(p, questions.slice(i, j), layout);
+      i = j;
+    }
+    return html;
+  }
+
   function cardsHtml(list, { sections = true } = {}) {
-    if (!sections) return list.map((q) => cardHtml(q, ctx.list.indexOf(q) + 1)).join("");
+    if (!sections) return blocksHtml(list, "exam");
     return examSections(list)
       .map(
         (sec) => `<section class="paper-section" aria-label="${sec.title}">
           <h2 class="text-sm font-extrabold uppercase tracking-wide text-slate-900">${sec.title}. <span class="font-semibold normal-case text-slate-600">${sec.desc}</span> <span class="ml-1 whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold normal-case text-slate-600">${sec.questions.length} câu</span></h2>
-          ${sec.questions.map((q) => cardHtml(q, ctx.list.indexOf(q) + 1)).join("")}
+          ${blocksHtml(sec.questions, "exam")}
         </section>`
       )
       .join("");
@@ -1309,7 +1452,7 @@
         </div>
         <div id="q-timer" class="timer-pill" role="timer" aria-label="Thời gian làm câu này"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><span id="q-timer-text" class="timer text-lg">00:00</span></div>
       </div>
-      <div class="p-4 sm:p-5">${cardHtml(q, num)}</div>
+      <div class="p-4 sm:p-5">${passageOf(q) ? passageGroupHtml(passageOf(q), [q], "practice") : cardHtml(q, num)}</div>
     </div>`;
   }
 
@@ -1641,6 +1784,9 @@
       return `<button type="button" class="nav-dot" data-action="goto-q" data-q="${q.id}" data-nav-q="${q.id}" aria-label="Đến câu ${n}">${n}</button>`;
     };
     const dots = () => list.map(dot).join("");
+    // Đề có đoạn văn dùng chung: mở rộng khung để đủ chỗ cho 2 cột (đoạn văn | câu hỏi).
+    const wide = list.some((q) => passageOf(q)) ? "max-w-7xl" : "max-w-6xl";
+    const hasPassages = wide === "max-w-7xl";
     // Bảng bên phải: mỗi phần có trong đề một nhóm số câu (phần không có câu hỏi thì không hiện).
     const groupedDots = examSections(list)
       .map((sec) => `<div class="mt-3 first:mt-3"><p class="text-xs font-bold text-slate-500">${sec.title} · ${sec.questions.length} câu</p><div class="mt-1.5 grid grid-cols-5 gap-2">${sec.questions.map(dot).join("")}</div></div>`)
@@ -1648,7 +1794,7 @@
 
     view.innerHTML = `
     <div class="exam-header sticky top-0 z-40">
-      <div class="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+      <div class="mx-auto flex ${wide} items-center gap-3 px-4 py-3">
         <button type="button" data-action="exit-exam" class="flex h-10 w-10 flex-none items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Thoát khỏi bài thi"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
         <div class="min-w-0">
           <p class="truncate text-sm font-extrabold text-slate-900 sm:text-base">${esc(exam.title)}</p>
@@ -1660,10 +1806,10 @@
         </div>
       </div>
       <div class="h-1 bg-slate-200"><div id="progress-bar" class="h-full bg-indigo-500 transition-all" style="width:0%"></div></div>
-      <div class="flex gap-2 overflow-x-auto px-4 py-2 lg:hidden" aria-label="Danh sách câu hỏi">${dots()}</div>
+      <div class="palette-strip flex gap-2 overflow-x-auto px-4 py-2 lg:hidden" aria-label="Danh sách câu hỏi">${dots()}</div>
     </div>
 
-    <div class="mx-auto grid max-w-6xl items-start gap-6 px-4 py-6 lg:grid-cols-[1fr_17rem]">
+    <div class="mx-auto grid ${wide} items-start gap-6 px-4 py-6 lg:grid-cols-[1fr_17rem]">
       <article class="paper" aria-label="Đề thi">
         <header class="text-center">
           <h1 class="text-xl font-extrabold uppercase tracking-wide text-slate-900 sm:text-2xl">${esc(exam.title)}</h1>
@@ -1678,16 +1824,94 @@
       </article>
 
       <aside class="hidden lg:sticky lg:top-28 lg:block" aria-label="Điều hướng câu hỏi">
-        <div class="card p-4">
+        <div class="card flex max-h-[calc(100vh-8.5rem)] flex-col p-4">
           <h2 class="text-sm font-extrabold text-slate-900">Danh sách câu hỏi</h2>
-          ${groupedDots}
+          <div class="palette-scroll -mr-1 mt-1 min-h-0 flex-1 overflow-y-auto pr-1">${groupedDots}</div>
           <div class="mt-4 flex items-center gap-4 text-xs text-slate-500"><span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded bg-indigo-600"></span>Đã làm</span><span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded border border-slate-300 bg-white"></span>Chưa làm</span></div>
         </div>
       </aside>
-    </div>`;
+    </div>
+    ${hasPassages ? '<button type="button" id="passage-fab" class="passage-fab" data-action="open-passage" hidden><i class="fa-solid fa-book-open" aria-hidden="true"></i><span>Đoạn văn</span></button>' : ""}`;
 
     updateExamProgress();
     startTimer();
+    trackCurrentQuestion();
+    updatePassageFab();
+  }
+
+  /* ---------- Theo dõi câu đang đọc: tô sáng trong bảng câu hỏi và tự cuộn bảng cho khớp ---------- */
+  let currentObserver = null;
+
+  // Cuộn riêng khung `scroller` (không cuộn cả trang) để `el` nằm trong vùng nhìn thấy.
+  function keepInView(scroller, el, axis) {
+    if (!scroller || !el) return;
+    const s = scroller.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const pad = 6;
+    if (axis === "y") {
+      if (r.top < s.top + pad) scroller.scrollTop -= s.top + pad - r.top;
+      else if (r.bottom > s.bottom - pad) scroller.scrollTop += r.bottom - s.bottom + pad;
+    } else if (r.left < s.left + pad) scroller.scrollLeft -= s.left + pad - r.left;
+    else if (r.right > s.right - pad) scroller.scrollLeft += r.right - s.right + pad;
+  }
+
+  function trackCurrentQuestion() {
+    if (currentObserver) currentObserver.disconnect();
+    currentObserver = null;
+    const cards = $$("#exam-questions .question-card[data-qid]");
+    if (!cards.length || !("IntersectionObserver" in window)) return;
+    const visible = new Set();
+    currentObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((en) => (en.isIntersecting ? visible.add(en.target.dataset.qid) : visible.delete(en.target.dataset.qid)));
+        const first = cards.find((c) => visible.has(c.dataset.qid));
+        if (!first) return;
+        const qid = first.dataset.qid;
+        $$("[data-nav-q]").forEach((el) => el.classList.toggle("is-current", el.dataset.navQ === qid));
+        keepInView($(".palette-scroll"), $(`.palette-scroll [data-nav-q="${qid}"]`), "y");
+        keepInView($(".palette-strip"), $(`.palette-strip [data-nav-q="${qid}"]`), "x");
+      },
+      { rootMargin: "-130px 0px -55% 0px", threshold: 0 }
+    );
+    cards.forEach((c) => currentObserver.observe(c));
+  }
+
+  /* ---------- Nút nổi “Đoạn văn” (màn hình hẹp): hiện khi đang làm câu của một đoạn văn đã cuộn khỏi tầm nhìn ---------- */
+  const WIDE_QUERY = "(min-width: 1200px)";
+
+  function updatePassageFab() {
+    const fab = $("#passage-fab");
+    if (!fab) return;
+    let target = null;
+    if (!window.matchMedia(WIDE_QUERY).matches) {
+      const vh = window.innerHeight;
+      for (const g of $$(".passage-group")) {
+        const r = g.getBoundingClientRect();
+        if (r.top < vh * 0.55 && r.bottom > 140) {
+          const pr = g.querySelector(".passage-pane").getBoundingClientRect();
+          if (!(pr.bottom > 150 && pr.top < vh - 80)) target = g;
+          break;
+        }
+      }
+    }
+    fab.hidden = !target;
+    if (target) {
+      fab.dataset.group = target.dataset.gid;
+      fab.querySelector("span").textContent = `Đoạn văn · ${target.dataset.range}`;
+    }
+  }
+
+  function openPassageSheet(gid) {
+    const g = $(`.passage-group[data-gid="${gid}"]`);
+    if (!g) return;
+    openModal(
+      `<div class="p-5 sm:p-6">
+        ${modalHeader(`Đoạn văn · ${g.dataset.range}`)}
+        <p class="mt-3 text-sm italic leading-relaxed text-slate-600">${g.querySelector(".passage-instruction").innerHTML}</p>
+        <div class="passage-body is-sheet mt-3">${g.querySelector(".passage-body").innerHTML}</div>
+      </div>`,
+      { size: "lg" }
+    );
   }
 
   function updateExamProgress() {
@@ -1727,6 +1951,8 @@
   function stopTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
+    if (currentObserver) currentObserver.disconnect();
+    currentObserver = null;
   }
 
   function requestSubmit() {
@@ -1877,7 +2103,7 @@
       return filter === "all" ? true : filter === "right" ? f === 1 : f < 1;
     });
     $("#review-list").innerHTML = items.length
-      ? items.map((q) => cardHtml(q, ctx.list.indexOf(q) + 1)).join("")
+      ? blocksHtml(items, "review")
       : `<p class="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-slate-500">Không có câu nào trong mục này.</p>`;
     $$("[data-action='filter-review']").forEach((btn) => {
       const active = btn.dataset.filter === filter;
@@ -1992,6 +2218,15 @@
     return out.replace(/\u0000(\d+)\u0000/g, (_, i) => esc(stash[Number(i)]));
   }
 
+  // Đoạn văn dạng chữ thuần (chỗ trống thành “(số câu) ______”) để gửi kèm cho Gia sư AI.
+  function passagePlainText(p) {
+    const qs = ctx.list.filter((x) => x.passageId === p.passageId);
+    const byBlank = new Map(qs.map((q, i) => [q.blank ?? i + 1, q]));
+    return String(p.passageContent ?? "")
+      .replace(/\{\{(\d+)\}\}/g, (_, k) => `(${byBlank.has(Number(k)) ? blankNumber(byBlank.get(Number(k))) : k}) ______`)
+      .replace(/<\/?(u|b|i|em|strong|sup|sub)>/g, "");
+  }
+
   function openAiChat(qid) {
     const q = bankById.get(qid);
     if (!q) return;
@@ -2002,16 +2237,21 @@
       messages: [{ role: "model", text: "Chào bạn! Mình là gia sư AI. Bạn muốn mình giải thích điều gì về câu hỏi này?" }],
       context: {
         subjectLabel: subjOf(q.subject).label,
+        subjectKey: q.subject,
         grade: q.grade,
         topic: q.topic,
-        questionText: q.questionText,
+        questionText: displayText(q),
+        passageText: passageOf(q) ? passagePlainText(passageOf(q)) : "",
         optionsText: q.type === "multiple_choice" ? Object.entries(q.options).map(([k, v]) => `${k}. ${v}`).join("\n") : q.type === "true_false" ? q.statements.map((s, i) => `${"abcdefgh"[i]}) ${s.text}`).join("\n") : q.type === "drag_drop" ? `Các ô: ${q.slots.map((s, i) => `${i + 1}) ${s.prompt}`).join("; ")}\nĐáp án cho trước: ${ddItems(q).map((it) => it.text).join("; ")}` : "",
         correctAnswerText: correctText(q),
         userAnswerText: answerText(q, a),
         explanation: q.explanation,
       },
     };
-    const suggestions = ["Vì sao đáp án này đúng?", "Giải thích chi tiết từng bước", "Vì sao các đáp án khác sai?", "Cho mình ví dụ tương tự"];
+    const suggestions =
+      q.subject === "English"
+        ? ["Dịch nghĩa câu này", "Giải thích ngữ pháp / từ vựng", "Vì sao các đáp án khác sai?", "Cho mình ví dụ tương tự"]
+        : ["Vì sao đáp án này đúng?", "Giải thích chi tiết từng bước", "Vì sao các đáp án khác sai?", "Cho mình ví dụ tương tự"];
     openModal(
       `<div class="flex h-[85vh] max-h-[40rem] flex-col sm:h-[36rem]">
         <div class="border-b border-slate-100 p-5 pb-4">
@@ -2020,7 +2260,7 @@
               <div><h2 id="modal-title" class="font-extrabold text-slate-900">Gia sư AI</h2><p class="text-xs text-slate-500">${subjOf(q.subject).label}${q.grade ? ` · Lớp ${q.grade}` : ""} · ${esc(q.topic)}</p></div></div>
             <button type="button" data-action="close-modal" class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Đóng"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
           </div>
-          <p class="mt-3 line-clamp-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">${esc(q.questionText)}</p>
+          <p class="mt-3 line-clamp-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">${rich(displayText(q))}</p>
         </div>
         <div id="chat-log" class="chat-scroll flex-1 space-y-3 overflow-y-auto p-5" aria-live="polite"></div>
         <div class="border-t border-slate-100 p-4">
@@ -2315,6 +2555,17 @@
     }
   });
 
+  let fabFrame = 0;
+  const scheduleFab = () => {
+    if (fabFrame) return;
+    fabFrame = requestAnimationFrame(() => {
+      fabFrame = 0;
+      updatePassageFab();
+    });
+  };
+  window.addEventListener("scroll", scheduleFab, { passive: true });
+  window.addEventListener("resize", scheduleFab);
+
   document.addEventListener("click", (e) => {
     if (e.target.matches("[data-modal-backdrop]")) return closeModal();
 
@@ -2381,7 +2632,20 @@
         examFilter[el.dataset.filter] = el.dataset.value;
         renderExams();
         break;
-      case "goto-q": $(`#card-${el.dataset.q}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); break;
+      case "goto-q":
+        closeModal(); // bấm số chỗ trống trong khung xem nhanh đoạn văn thì đóng khung rồi cuộn tới câu
+        $(`#card-${el.dataset.q}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        break;
+      case "toggle-passage": {
+        const pane = el.closest(".passage-pane");
+        const collapsed = pane.classList.toggle("is-collapsed");
+        el.setAttribute("aria-expanded", String(!collapsed));
+        el.querySelector("span").textContent = collapsed ? "Mở rộng" : "Thu gọn";
+        el.querySelector("i").className = `fa-solid ${collapsed ? "fa-chevron-down" : "fa-chevron-up"}`;
+        updatePassageFab();
+        break;
+      }
+      case "open-passage": openPassageSheet(el.dataset.group); break;
       case "submit-exam": requestSubmit(); break;
       case "confirm-submit": finishExam(false); break;
       case "exit-exam": confirmExit(); break;
@@ -2414,7 +2678,7 @@
 
   window.LabApp = {
     $, $$, view, esc, fmtDate, fmtPercent, fmtScore, toast, openModal, closeModal, Store, bankById, gradeQuestion,
-    subjOf, startPracticeSession, renderNotFound, route,
+    subjOf, startPracticeSession, renderNotFound, route, rich, displayText, passageOf, passageBodyHtml, passageKind,
   };
   window.dispatchEvent(new Event("labapp:ready"));
 
