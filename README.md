@@ -50,8 +50,9 @@ LabLuyen (*Lab* + *Luyện* — "practice") is a Vietnamese-language web app bui
 
 | Feature | Details |
 | :--- | :--- |
-| **Question bank** | Mathematics, Physics, Chemistry, Biology and English for grades 10–12, organized by grade → topic → difficulty. **419 questions across 43 topics** and **7 mock exams** ship with the repository. |
+| **Question bank** | Mathematics, Physics, Chemistry, Biology and English for grades 10–12, organized by grade → topic → difficulty. **433 questions across 50 topics** and **8 mock exams** ship with the repository. |
 | **Four question types** | Multiple choice (A–D), True/False with four statements a–d, Short answer (numeric answers accept integers, negatives and decimals with `,` or `.`), and **Drag & drop** matching (5 slots plus distractor chips). Exam sections (Part I, II, …) appear only for the types an exam actually contains. |
+| **Shared passages** | Reading and Cloze-test questions share one passage (`passageId`). In exams the passage is pinned in a left column on wide screens (own scrollbar) and shown as a collapsible box plus a floating “Đoạn văn” button on small screens. Review, practice and printed exports show the passage too. |
 | **Math rendering** | Formulas written as `$...$` (inline) or `$$...$$` (block) render with KaTeX in questions, options, statements, explanations, the AI tutor chat, live quizzes and AI quizzes. |
 | **Three difficulty levels** | Easy (*Nhận biết*), Medium (*Thông hiểu*), Hard (*Vận dụng*). Practice sessions can filter by type and level. |
 | **Timed mock exams** | Countdown timer, per-exam duration (45 / 50 / 90 min in the bundled exams), result page with 10-point score and per-topic breakdown. |
@@ -108,7 +109,8 @@ Build a printable paper from any question set: choose the number of questions an
 ```text
                                   Browser (static SPA, hash routing)
 +-------------------------------------------------------------------------------------+
-| index.html  ->  config.js, data.js, data-extra.js, data-math.js, data-english.js,   |
+| index.html  ->  config.js, data.js, data-extra.js, data-passages.js, data-math.js,   |
+|                 data-english.js,                                                    |
 |                 auth.js, ai.js, app.js, math.js (KaTeX auto-render),                |
 |                 export.js, features.js, game.js, live.js, about.js                  |
 |                                                                                     |
@@ -209,8 +211,9 @@ Build a printable paper from any question set: choose the number of questions an
 │   ├── config.js                    # Client-side keys (Gemini, Firebase) — template
 │   ├── data.js / data-extra.js      # Subject config, exam schema, Physics/Chemistry/Biology questions, mock exams
 │   ├── math.js                      # KaTeX auto-render (scans the page and observes new content)
+│   ├── data-passages.js             # Shared passage schema (Reading / Cloze) + passageBank
 │   ├── data-math.js                 # Mathematics questions (grades 10–12, LaTeX) + 2 exams
-│   ├── data-english.js              # English questions (grades 10–12) + mock exam
+│   ├── data-english.js              # English questions (grades 10–12), shared passages, structured explanations + 2 exams
 │   ├── app.js                       # Router, practice, exams, grading, history
 │   ├── ai.js                        # AI tutor client
 │   ├── auth.js                      # Firebase Auth wrapper
@@ -386,6 +389,13 @@ When adding questions, follow the helper constructors in `public/data.js` (`mc`,
 * **Exams** carry an `examCategory`: `"subject"` (per-subject THPT exams, the only category shown today) or `"standardized"` (reserved for ĐGNL / TSA / HSA, hidden for now). Visibility is controlled by `EXAM_CATEGORIES[...].visible` in `public/data.js`. Standardized exams may set `subject: "Mixed"` and `standardizedType: "DGNL" | "TSA" | "HSA"`.
 * A per-subject exam must contain only questions of its own subject.
 * **Exam sections are dynamic.** Part numbers (PHẦN I, II, III, …) are generated from the question types present in the exam, in the order multiple choice → true/false → short answer → drag & drop. A type with no questions produces no section, and the remaining parts are numbered consecutively.
+
+### Shared passages (Reading / Cloze)
+
+* Store each passage once in `passageBank` (see `public/data-passages.js`): `{ passageId, kind: "reading" | "cloze", title?, instruction?, passageContent }`. Give every related question `passageId`; cloze questions also get `blank: k` for the `{{k}}` blank they fill, and `questionText` can use `{{n}}` (replaced by the question number shown in the exam: "Choose the best answer for blank {{n}}").
+* Questions that share a passage are always kept adjacent inside their section. Live battles skip them (a passage cannot be shown there).
+* `explain` (English data): `{ translation, grammar, vocab[] }` renders as three blocks in review and practice: **Đáp án đúng → Dịch nghĩa → Giải thích ngữ pháp / từ vựng**. `explanation` is generated as a flat string for the AI tutor and exports. Questions without `explain` keep the single "Giải thích" paragraph.
+* Light inline markup is allowed in question text, options, passages and explanations: `<u>…</u>`, `<b>…</b>`, `<i>…</i>` (closing tag required), e.g. `b<u>oo</u>k` for pronunciation items.
 
 ### Writing math content
 
