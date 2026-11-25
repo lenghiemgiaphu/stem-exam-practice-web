@@ -193,12 +193,22 @@ Build a printable paper from any question set: choose the number of questions an
 ├── app/
 │   ├── api/
 │   │   ├── generate-quiz/route.ts   # AI quiz generation (multipart upload / link / YouTube / text)
-│   │   └── live/route.ts            # Live battle API (create, join, start, next, end, answer, state)
+│   │   ├── live/route.ts            # Live battle API (create, join, start, next, end, answer, state)
+│   │   ├── ai-explain/route.ts      # AI tutor proxy (server-side Gemini call + usage logging to Supabase)
+│   │   └── analytics/               # Learning analytics API (writes to Supabase via the service role key)
+│   │       ├── identify/route.ts    #   upsert learner profile / cohort tag
+│   │       ├── session/route.ts     #   start | complete | abandon a study session (sendBeacon-friendly)
+│   │       ├── attempts/route.ts    #   save question attempts + SM-2 spaced-repetition schedule
+│   │       ├── due-review/route.ts  #   GET question ids that are due for spaced review
+│   │       └── ai-feedback/route.ts #   👍 / 👎 rating of an AI answer
 │   ├── globals.css                  # Tailwind + design tokens
 │   ├── layout.tsx                   # Root layout, metadata, analytics
 │   └── page.tsx                     # Redirects to the static SPA
 ├── components/ui/button.tsx         # shadcn/ui primitives
 ├── lib/
+│   ├── supabase/server.ts           # Server-only Supabase client (service role); returns null when unconfigured
+│   ├── analytics/                   # Shared helpers: zod schemas, SM-2, rate limit, HTTP helpers, constants
+│   ├── ai/gemini.ts                 # Tutor prompt, Gemini REST call, token/cost accounting
 │   ├── live/engine.ts               # Room state machine, scoring, Redis storage, rate limiting
 │   ├── quiz/
 │   │   ├── schema.ts                # Zod schemas + question normalization
@@ -215,7 +225,8 @@ Build a printable paper from any question set: choose the number of questions an
 │   ├── data-math.js                 # Mathematics questions (grades 10–12, LaTeX) + 2 exams
 │   ├── data-english.js              # English questions (grades 10–12), shared passages, structured explanations + 2 exams
 │   ├── app.js                       # Router, practice, exams, grading, history
-│   ├── ai.js                        # AI tutor client
+│   ├── ai.js                        # AI tutor client (still calls Gemini directly until the server proxy is wired in)
+│   ├── analytics.js                 # Analytics client: anon/Firebase user id, cohort detection, non-blocking API calls
 │   ├── auth.js                      # Firebase Auth wrapper
 │   ├── features.js                  # AI quiz UI + statistics (personal / class)
 │   ├── game.js                      # XP, levels, streaks, badges
@@ -223,6 +234,9 @@ Build a printable paper from any question set: choose the number of questions an
 │   ├── export.js                    # Printable exam builder (PDF / Word)
 │   ├── about.js                     # Product introduction page
 │   └── style.css
+├── supabase/migrations/             # SQL to run in the Supabase SQL Editor (001_analytics_schema.sql)
+├── docs/SUPABASE_SETUP.md           # Step-by-step Supabase setup guide (Vietnamese)
+├── .env.example                     # Server environment variables
 ├── next.config.mjs                  # `/` -> `/index.html` rewrite
 ├── package.json
 └── pnpm-lock.yaml
@@ -264,12 +278,21 @@ Each integration is optional and independent:
 | **Sign-in** | `firebase` block in `public/config.js` (+ Google and Email/Password providers enabled, your domain in *Authorized domains*) | App runs in guest mode. |
 | **AI quiz generator** | AI Gateway access for the model in `QUIZ_MODEL` (default `google/gemini-3.8-flash`) | API returns a clear "AI service not enabled" error. |
 | **Live battles** | Upstash Redis REST credentials | API returns a clear "Redis not connected" error. |
+| **Learning analytics** | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` and the SQL in `supabase/migrations/` (see [`docs/SUPABASE_SETUP.md`](./docs/SUPABASE_SETUP.md)) | `/api/analytics/*` answers `{ ok: false, disabled: true }` and `public/analytics.js` stops calling; learning is unaffected. |
+| **AI tutor via server** | `GEMINI_API_KEY` (+ optional `GEMINI_MODEL`) in server env | `/api/ai-explain` returns `503 ai/missing-key`. |
 
 **Server environment variables** (`.env.local`):
 
 ```bash
 # AI quiz generator (optional override of the default model)
 QUIZ_MODEL=google/gemini-3.8-flash
+
+# Learning analytics (Supabase) and server-side AI tutor — see .env.example
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...        # server only, never NEXT_PUBLIC_
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.5-flash
+ADMIN_ANALYTICS_SECRET=...           # reserved for the admin stats page
 
 # Live battles — either naming scheme is accepted
 KV_REST_API_URL=...
@@ -331,6 +354,21 @@ The project is a standard Next.js app and deploys to **Vercel** with no extra bu
 | `POST` | `answer` — `code`, `pid`, `choice` (`A`–`D`) | `pid` | 20 / 10 s / player |
 | `GET` | `?code=&pid=&host=` — full room state for the caller's role | — | — |
 
+### Analytics API (`/api/analytics/*`, `/api/ai-explain`)
+
+All endpoints are same-origin JSON APIs that write through the Supabase **service role key** (RLS is enabled on every table with no client policies). `user_id` is the Firebase `uid` or an anonymous `anon_<uuid>` generated by `public/analytics.js`.
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/api/analytics/identify` | Upsert the learner profile; keeps `first_seen_at`, updates `last_seen_at`, can only *raise* `cohort_tag` to `nang_cao_nguyen`. |
+| `POST` | `/api/analytics/session` | `action: start` → `{ sessionId }`; `complete` / `abandon` (accepts `navigator.sendBeacon`). |
+| `POST` | `/api/analytics/attempts` | Store attempts; server derives `attempt_context` (`initial` / `retest` after 7–14 days / `spaced_review`), `is_first_try_in_session`, `was_scheduled_on_time`, and updates the SM-2 schedule. |
+| `GET` | `/api/analytics/due-review?userId=` | Question ids with `next_review_at <= now`. |
+| `POST` | `/api/ai-explain` | Server-side Gemini proxy → `{ answer, interactionId }`; logs tokens, estimated cost, latency and `is_requery` (same question asked within 10 min). |
+| `POST` | `/api/analytics/ai-feedback` | Set `helpfulness_rating` (`1` / `-1`) for an `interactionId`. |
+
+When Supabase is not configured the analytics endpoints respond `200 { ok: false, disabled: true }`; `/api/ai-explain` still answers (with `interactionId: null`).
+
 ---
 
 ## 8. Security & Reliability Design
@@ -350,7 +388,7 @@ The project is a standard Next.js app and deploys to **Vercel** with no extra bu
 
 ## 9. Scope, Limitations & Caveats
 
-1. **Gemini key is client-side.** The AI tutor calls the Gemini API directly from the browser, so the key in `public/config.js` is visible to every visitor. This is acceptable for local demos only; for production, proxy the call through a route handler (like `/api/generate-quiz`) and restrict the key.
+1. **Gemini key is client-side (until `ai.js` is switched over).** The AI tutor still calls the Gemini API directly from the browser, so the key in `public/config.js` is visible to every visitor. The server proxy `POST /api/ai-explain` is already available; once `public/ai.js` is pointed at it, remove the key from `config.js`. Analytics identity is client-asserted (no Firebase ID-token verification yet), so treat the statistics as indicative, not tamper-proof.
 2. **Progress is local.** XP, streaks, badges, history and saved quizzes are stored in `localStorage`: they do not sync across devices, can be cleared by the browser, and can be edited by the user. Do not use them for high-stakes assessment.
 3. **Quiz generation limits are best-effort.** The 10-requests-per-10-minutes limiter on `/api/generate-quiz` is held in memory, so it is per server instance and resets on cold starts. Use the Redis-backed limiter (already used by live battles) if you need strict enforcement.
 4. **AI output is unverified.** Generated questions and tutor explanations can be wrong. Teachers should review a quiz before using it for assessment (the About page says so too).
