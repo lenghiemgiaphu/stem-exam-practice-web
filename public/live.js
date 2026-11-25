@@ -144,7 +144,8 @@
       return [];
     }
   };
-  const isMc = (q) => q.type === "multiple_choice" && q.options && q.correctAnswer;
+  // Câu hỏi dùng chung đoạn văn (Reading / Cloze) cần đoạn văn đi kèm nên không đưa vào đấu trực tiếp.
+  const isMc = (q) => q.type === "multiple_choice" && q.options && q.correctAnswer && !q.passageId;
 
   const setup = { source: "bank", subject: "Physics", grade: "all", topic: "all", count: 10, time: 20, title: "", aiId: "" };
 
