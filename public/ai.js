@@ -8,9 +8,15 @@ const AITutor = (() => {
       "Hãy giải thích từng bước, nêu rõ kiến thức/công thức liên quan, và chỉ ra lỗi sai thường gặp khi phù hợp.",
       "Không bịa đặt dữ kiện. Nếu chưa chắc chắn, hãy nói rõ.",
       "Mọi công thức toán học, ký hiệu và biểu thức phải viết bằng LaTeX: dùng $...$ cho công thức trên cùng dòng và $$...$$ cho công thức đứng riêng một dòng (ví dụ $x^2 - 4x + 3 = 0$, $\\int_0^1 f(x)\\,dx$). Không dùng ký tự Unicode thay cho công thức phức tạp.",
+      ...(ctx.subjectKey === "English"
+        ? [
+            "Với câu hỏi Tiếng Anh: khi học sinh nhờ giải thích câu hỏi, hãy trả lời theo 3 mục có tiêu đề in đậm: **Đáp án đúng**; **Dịch nghĩa** (dịch câu/ngữ cảnh liên quan sang tiếng Việt); **Giải thích ngữ pháp / từ vựng** (nêu cấu trúc, quy tắc, vì sao các đáp án khác sai và vài từ/cụm từ mở rộng). Giữ nguyên từ tiếng Anh, giải thích bằng tiếng Việt. Với câu hỏi phụ của học sinh thì trả lời trực tiếp, không cần đủ 3 mục.",
+          ]
+        : []),
       "",
       "BỐI CẢNH CÂU HỎI:",
       `Môn: ${ctx.subjectLabel}${ctx.grade ? ` - Lớp ${ctx.grade}` : ""} - Chuyên đề: ${ctx.topic}`,
+      ctx.passageText ? `Đoạn văn dùng chung cho câu hỏi:\n${ctx.passageText}` : "",
       `Câu hỏi: ${ctx.questionText}`,
       ctx.optionsText ? `Các lựa chọn:\n${ctx.optionsText}` : "",
       `Đáp án đúng: ${ctx.correctAnswerText}`,
