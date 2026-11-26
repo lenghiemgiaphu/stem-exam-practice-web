@@ -318,6 +318,174 @@
   };
 
   /* =====================================================================
+   * Ghi nhận thống kê học tập (Analytics) — không bao giờ chặn hay làm hỏng việc học.
+   * Mọi hàm bên dưới nuốt lỗi; không gọi được API thì việc học vẫn diễn ra bình thường.
+   * ===================================================================== */
+  const examHolder = { track: null }; // trạng thái theo dõi của bài thi đang làm (ctx bị dựng lại mỗi lần render)
+
+  const Track = (() => {
+    const api = () => window.Analytics;
+    const topicIdOf = (q) => [q.subject, q.grade, q.topic].filter((v) => v != null && v !== "").join("-");
+    const attemptOf = (q, answers) => ({
+      questionId: q.id,
+      isCorrect: gradeQuestion(q, answers[q.id]).fraction === 1,
+      subject: q.subject,
+      topicId: topicIdOf(q),
+      questionType: q.type,
+    });
+
+    /** Tiến độ hiện tại, dùng cho "bỏ dở" (kể cả khi đóng tab) và "hoàn thành". */
+    function progress(holder) {
+      const t = holder && holder.track;
+      if (!t) return {};
+      const { list = [], answers = {}, current } = t.getState() || {};
+      const done = list.filter((q) => isAnswered(q, answers[q.id]));
+      let drop = typeof current === "number" ? current : list.findIndex((q) => !isAnswered(q, answers[q.id]));
+      if (drop < 0) drop = Math.max(list.length - 1, 0);
+      return {
+        totalQuestions: list.length,
+        answeredQuestions: done.length,
+        correctCount: done.filter((q) => gradeQuestion(q, answers[q.id]).fraction === 1).length,
+        dropOffQuestionIndex: drop,
+      };
+    }
+
+    const sendRows = (t, rows) => {
+      const a = api();
+      if (a) Promise.resolve(a.recordAttempts(t.id, rows)).catch(() => {});
+    };
+    const closeNow = (t, status, stats) => {
+      const a = api();
+      if (!a || !t.id) return;
+      const call = status === "complete" ? a.completeSession(t.id, stats) : a.abandonSession(t.id, stats);
+      Promise.resolve(call).catch(() => {});
+    };
+
+    /** Bắt đầu theo dõi một phiên học. existingId: tiếp tục phiên cũ (bài thi được mở lại sau khi tải lại trang). */
+    function start(holder, info, getState, existingId, onId) {
+      try {
+        const t = (holder.track = { id: null, ready: false, ended: false, pendingEnd: null, queue: [], recorded: {}, info, getState });
+        const a = api();
+        if (!a) {
+          t.ready = true;
+          return;
+        }
+        if (existingId) {
+          t.id = existingId;
+          t.ready = true;
+          a.watchSession(existingId, () => progress(holder));
+          return;
+        }
+        Promise.resolve(a.startSession(info))
+          .then((id) => {
+            t.ready = true;
+            t.id = id || null;
+            if (t.id) {
+              if (onId) onId(t.id);
+              if (!t.ended) a.watchSession(t.id, () => progress(holder));
+            }
+            // Gửi bù các lượt trả lời phát sinh trong lúc phiên chưa kịp có id, rồi đến lệnh kết thúc (nếu có).
+            if (t.queue.length) sendRows(t, t.queue.splice(0));
+            if (t.pendingEnd) closeNow(t, t.pendingEnd.status, t.pendingEnd.stats);
+          })
+          .catch(() => {});
+      } catch (_) {
+        /* bỏ qua */
+      }
+    }
+
+    /** Ghi các lượt trả lời chưa ghi (mỗi câu một lần cho tới khi bị "làm lại"). */
+    function record(holder, questions) {
+      try {
+        const t = holder && holder.track;
+        if (!t || t.ended) return;
+        const { answers = {} } = t.getState() || {};
+        const rows = questions
+          .filter((q) => q && !t.recorded[q.id])
+          .map((q) => {
+            t.recorded[q.id] = true;
+            return attemptOf(q, answers);
+          });
+        if (!rows.length) return;
+        if (t.ready) sendRows(t, rows);
+        else t.queue.push(...rows);
+      } catch (_) {
+        /* bỏ qua */
+      }
+    }
+
+    const unrecord = (holder, qid) => {
+      try {
+        if (holder && holder.track) delete holder.track.recorded[qid];
+      } catch (_) {
+        /* bỏ qua */
+      }
+    };
+
+    /** Kết thúc phiên: status = "complete" | "abandon". Gọi nhiều lần vẫn an toàn (chỉ lần đầu có hiệu lực). */
+    function end(holder, status, extra) {
+      try {
+        const t = holder && holder.track;
+        if (!t || t.ended) return;
+        t.ended = true;
+        const stats = { ...progress(holder), ...(extra || {}) };
+        if (!t.ready) t.pendingEnd = { status, stats };
+        else closeNow(t, status, stats);
+      } catch (_) {
+        /* bỏ qua */
+      }
+    }
+
+    return { start, record, unrecord, end, progress, topicIdOf };
+  })();
+
+  /** Luyện tập / ôn ngắt quãng: bắt đầu theo dõi cho `ctx` hiện tại. */
+  function trackPractice(c) {
+    try {
+      const { meta, list } = c;
+      const spaced = !!meta.spacedReview;
+      Track.start(
+        c,
+        {
+          sessionType: spaced ? "spaced_review" : "topic_practice",
+          subject: spaced ? null : meta.subject,
+          topicId: spaced ? null : [meta.subject, meta.grade, meta.topic].filter((v) => v != null && v !== "").join("-"),
+          totalQuestions: list.length,
+        },
+        () => ({ list: c.list, answers: c.answers, current: c.current })
+      );
+    } catch (_) {
+      /* bỏ qua */
+    }
+  }
+
+  /** Thi thử: theo dõi bài thi đang làm; phiên thống kê được lưu cùng `session` để tiếp tục được sau khi tải lại trang. */
+  function trackExam(exam, list) {
+    try {
+      const key = session && session.startedAt;
+      if (examHolder.track && examHolder.track.key === key) {
+        examHolder.track.getState = () => ({ list, answers: (session && session.answers) || {} });
+        return;
+      }
+      Track.start(
+        examHolder,
+        { sessionType: "exam", subject: exam.subject || null, examId: exam.examId, totalQuestions: list.length },
+        () => ({ list, answers: (session && session.answers) || {} }),
+        session && session.analyticsId,
+        (id) => {
+          if (session && session.startedAt === key) {
+            session.analyticsId = id;
+            saveSession();
+          }
+        }
+      );
+      if (examHolder.track) examHolder.track.key = key;
+    } catch (_) {
+      /* bỏ qua */
+    }
+  }
+
+  /* =====================================================================
    * Modal + toast
    * ===================================================================== */
   const modalRoot = $("#modal-root");
@@ -1364,11 +1532,13 @@
     const grade = meta.grade;
     const types = Object.keys(QUESTION_TYPES);
 
+    Track.end(ctx, "abandon"); // phiên luyện tập trước đó (nếu còn dở) được ghi nhận là bỏ dở
     ddSel = null;
     ctx = {
       mode: "practice", answers: {}, checked: {}, flagged: {}, qTime: {}, current: 0, tickAt: Date.now(), list,
       startedAt: Date.now(), meta,
     };
+    trackPractice(ctx);
 
     const typeChips = types
       .filter((t) => list.some((q) => q.type === t))
@@ -1578,11 +1748,13 @@
       return;
     }
     ctx.checked[qid] = true;
+    Track.record(ctx, [q]);
     ddSel = null;
     paintPractice();
   }
 
   function retryQuestion(qid) {
+    Track.unrecord(ctx, qid);
     delete ctx.checked[qid];
     delete ctx.answers[qid];
     delete ctx.qTime[qid];
@@ -1592,6 +1764,7 @@
   }
 
   function resetPractice() {
+    Track.end(ctx, "abandon"); // "Làm lại tất cả" = bỏ phiên hiện tại, bắt đầu phiên mới
     ctx.answers = {};
     ctx.checked = {};
     ctx.flagged = {};
@@ -1600,6 +1773,7 @@
     ctx.startedAt = Date.now();
     ctx.tickAt = Date.now();
     ddSel = null;
+    trackPractice(ctx);
     paintPractice();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1628,6 +1802,8 @@
     );
   }
 
+  const practiceLink = (p) => (p.spacedReview ? "#/review" : p.aiQuiz ? `#/ai-quiz/${p.aiQuiz}` : practiceHref(p.subject, p.grade, p.topic, p));
+
   function finishPractice() {
     stopTimer();
     const times = {};
@@ -1638,7 +1814,7 @@
     });
     const attempt = buildAttempt({
       type: "practice",
-      title: ctx.meta.aiQuiz ? `Quiz AI: ${ctx.meta.topic}` : `Luyện tập: ${ctx.meta.topic} (Lớp ${ctx.meta.grade})`,
+      title: ctx.meta.spacedReview ? "Ôn tập ngắt quãng" : ctx.meta.aiQuiz ? `Quiz AI: ${ctx.meta.topic}` : `Luyện tập: ${ctx.meta.topic} (Lớp ${ctx.meta.grade})`,
       practice: ctx.meta,
       list: ctx.list,
       answers: ctx.answers,
@@ -1648,6 +1824,9 @@
     });
     attempt.reward = window.LabGame?.award(attempt) ?? null;
     Store.add(attempt);
+    // Thống kê: ghi nốt các câu đã làm nhưng chưa bấm "Kiểm tra", rồi đóng phiên là hoàn thành.
+    Track.record(ctx, ctx.list.filter((q) => isAnswered(q, ctx.answers[q.id])));
+    Track.end(ctx, "complete", { score: attempt.score });
     closeModal();
     toast("Đã lưu kết quả luyện tập vào lịch sử", "success");
     location.hash = `#/result/${attempt.id}`;
@@ -1758,6 +1937,8 @@
       return;
     }
     const now = Date.now();
+    Track.end(examHolder, "abandon"); // bài thi trước đó (nếu còn dở) bị thay thế
+    examHolder.track = null;
     session = { examId, startedAt: now, endsAt: now + minutes * 60000, durationSec: minutes * 60, answers: {} };
     saveSession();
     closeModal();
@@ -1777,6 +1958,7 @@
     }
     const list = orderQuestions(exam.questions);
     ctx = { mode: "exam", answers: session.answers, checked: {}, list };
+    trackExam(exam, list);
     const user = Auth.user;
 
     const dot = (q) => {
@@ -1982,6 +2164,9 @@
     });
     attempt.reward = window.LabGame?.award(attempt) ?? null;
     Store.add(attempt);
+    Track.record(examHolder, ctx.list.filter((q) => isAnswered(q, ctx.answers[q.id])));
+    Track.end(examHolder, "complete", { score: attempt.score });
+    examHolder.track = null;
     clearSession();
     closeModal();
     if (auto) toast("Hết giờ! Bài làm đã được nộp tự động.", "info");
@@ -2066,7 +2251,7 @@
             <div class="rounded-xl bg-slate-50 p-3"><dt class="text-xs font-semibold text-slate-500">Bỏ trống</dt><dd class="mt-0.5 text-xl font-extrabold text-slate-900">${skipped}</dd></div>
           </dl>
           <div class="mt-5 flex flex-wrap gap-2">
-            ${attempt.type === "exam" && attempt.examId ? `<button type="button" class="btn btn-primary" data-action="open-exam-settings" data-exam="${attempt.examId}"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Làm lại đề</button>` : attempt.practice ? `<a class="btn btn-primary" href="${attempt.practice.aiQuiz ? `#/ai-quiz/${attempt.practice.aiQuiz}` : practiceHref(attempt.practice.subject, attempt.practice.grade, attempt.practice.topic, attempt.practice)}"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Luyện lại</a>` : ""}
+            ${attempt.type === "exam" && attempt.examId ? `<button type="button" class="btn btn-primary" data-action="open-exam-settings" data-exam="${attempt.examId}"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Làm lại đề</button>` : attempt.practice ? `<a class="btn btn-primary" href="${practiceLink(attempt.practice)}"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Luyện lại</a>` : ""}
             ${weakest ? `<a href="${topicHref(weakest)}" class="btn btn-secondary"><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Luyện chuyên đề yếu nhất</a>` : ""}
             <a href="#/history" class="btn btn-ghost">Lịch sử</a>
           </div>
@@ -2145,7 +2330,7 @@
         const isExam = a.type === "exam";
         const again = isExam && a.examId && examById.get(a.examId)
           ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-exam-settings" data-exam="${a.examId}">Làm lại</button>`
-          : a.practice ? `<a class="btn btn-ghost btn-sm" href="${a.practice.aiQuiz ? `#/ai-quiz/${a.practice.aiQuiz}` : practiceHref(a.practice.subject, a.practice.grade, a.practice.topic, a.practice)}">Làm lại</a>` : "";
+          : a.practice ? `<a class="btn btn-ghost btn-sm" href="${practiceLink(a.practice)}">Làm lại</a>` : "";
         return `<li class="card flex flex-wrap items-center gap-4 p-4">
           <span class="flex h-11 w-11 flex-none items-center justify-center rounded-xl ${isExam ? "bg-indigo-100 text-indigo-700" : "bg-sky-100 text-sky-700"}"><i class="fa-solid ${isExam ? "fa-file-lines" : "fa-pen-to-square"}" aria-hidden="true"></i></span>
           <div class="min-w-0 flex-1 basis-56">
@@ -2234,6 +2419,7 @@
     chat = {
       history: [],
       busy: false,
+      meta: { questionId: q.id, questionType: q.type, subject: q.subject, topicId: Track.topicIdOf(q) },
       messages: [{ role: "model", text: "Chào bạn! Mình là gia sư AI. Bạn muốn mình giải thích điều gì về câu hỏi này?" }],
       context: {
         subjectLabel: subjOf(q.subject).label,
@@ -2277,17 +2463,36 @@
     paintChat();
   }
 
+  // Nút đánh giá hữu ích 👍/👎 (chỉ hiện khi server đã ghi lượt hỏi và trả interactionId).
+  function ratingHtml(m, i) {
+    const btn = (rating, icon, label) =>
+      `<button type="button" data-action="ai-rate" data-i="${i}" data-rating="${rating}" aria-pressed="${m.rating === rating}" aria-label="${label}" title="${label}" class="flex h-7 w-7 items-center justify-center rounded-md transition ${m.rating === rating ? "bg-indigo-100 text-indigo-700" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"}"><i class="fa-${m.rating === rating ? "solid" : "regular"} ${icon}" aria-hidden="true"></i></button>`;
+    return `<div class="-mt-1.5 flex items-center gap-1 pl-1 text-xs text-slate-400"><span class="mr-1">${m.rating ? "Cảm ơn phản hồi của bạn" : "Câu trả lời có hữu ích không?"}</span>${btn(1, "fa-thumbs-up", "Hữu ích")}${btn(-1, "fa-thumbs-down", "Chưa hữu ích")}</div>`;
+  }
+
+  function rateAiAnswer(index, rating) {
+    const m = chat && chat.messages[index];
+    if (!m || !m.interactionId || (rating !== 1 && rating !== -1)) return;
+    m.rating = rating;
+    paintChat();
+    try {
+      if (window.Analytics) Promise.resolve(window.Analytics.sendAiFeedback(m.interactionId, rating)).catch(() => {});
+    } catch (_) {
+      /* đánh giá là phụ, không được làm gián đoạn việc học */
+    }
+  }
+
   function paintChat() {
     const log = $("#chat-log");
     if (!log || !chat) return;
     log.innerHTML =
       chat.messages
-        .map((m) =>
+        .map((m, i) =>
           m.role === "user"
             ? `<div class="flex"><div class="bubble user">${esc(m.text).replace(/\n/g, "<br>")}</div></div>`
             : m.error
               ? `<div class="flex"><div class="bubble error"><i class="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true"></i>${esc(m.text)}</div></div>`
-              : `<div class="flex"><div class="bubble model">${mdLite(m.text)}</div></div>`
+              : `<div class="flex"><div class="bubble model">${mdLite(m.text)}</div></div>${m.interactionId ? ratingHtml(m, i) : ""}`
         )
         .join("") +
       (chat.busy ? `<div class="flex"><div class="bubble model typing" aria-label="AI đang trả lời"><span></span><span></span><span></span></div></div>` : "");
@@ -2306,9 +2511,13 @@
     if (input) input.value = "";
     paintChat();
     try {
-      const reply = await AITutor.ask(chat.context, chat.history);
+      const meta = {
+        ...chat.meta,
+        sessionId: (ctx.track && ctx.track.id) || (examHolder.track && examHolder.track.id) || null,
+      };
+      const { text: reply, interactionId } = await AITutor.ask(chat.context, chat.history, meta);
       chat.history.push({ role: "model", text: reply });
-      chat.messages.push({ role: "model", text: reply });
+      chat.messages.push({ role: "model", text: reply, interactionId });
     } catch (error) {
       chat.history.pop();
       chat.messages.push({ role: "model", text: AITutor.errorMessage(error), error: true });
@@ -2322,6 +2531,8 @@
    * Router
    * ===================================================================== */
   function route() {
+    // Rời trang luyện tập mà chưa kết thúc → ghi nhận bỏ dở (bài thi có thể được mở lại nên không đóng ở đây).
+    if (ctx.mode === "practice") Track.end(ctx, "abandon");
     stopTimer();
     closeModal();
     const [pathPart, queryPart = ""] = (location.hash || "#/").replace(/^#\/?/, "").split("?");
@@ -2329,14 +2540,14 @@
     const params = new URLSearchParams(queryPart);
     const [name, ...rest] = parts;
     ddSel = null;
-    const navKey = { "": "home", bank: "bank", practice: "bank", exams: "exams", take: "exams", result: "history", history: "history", "ai-quiz": "ai", "stats": "stats", live: "live", about: "about", profile: "" }[name] || "";
+    const navKey = { "": "home", bank: "bank", practice: "bank", exams: "exams", take: "exams", result: "history", history: "history", "ai-quiz": "ai", review: "review", "stats": "stats", live: "live", about: "about", profile: "" }[name] || "";
 
     document.body.dataset.view = name || "home";
     $$("[data-nav]").forEach((a) => a.classList.toggle("is-active", a.dataset.nav === navKey));
     $("#mobile-menu").classList.add("hidden");
     $("#menu-toggle").setAttribute("aria-expanded", "false");
 
-    const titles = { "": "LabLuyen – Luyện thi Toán, Lý, Hóa, Sinh, Anh THPT", bank: "Ngân hàng câu hỏi – LabLuyen", practice: "Luyện tập – LabLuyen", exams: "Đề thi – LabLuyen", take: "Đang làm bài – LabLuyen", result: "Kết quả – LabLuyen", history: "Lịch sử làm bài – LabLuyen", "ai-quiz": "Tạo quiz bằng AI – LabLuyen", stats: "Thống kê kiến thức – LabLuyen", live: "Đấu trắc nghiệm trực tiếp – LabLuyen", about: "Giới thiệu – LabLuyen", profile: "Thành tích – LabLuyen" };
+    const titles = { "": "LabLuyen – Luyện thi Toán, Lý, Hóa, Sinh, Anh THPT", bank: "Ngân hàng câu hỏi – LabLuyen", practice: "Luyện tập – LabLuyen", exams: "Đề thi – LabLuyen", take: "Đang làm bài – LabLuyen", result: "Kết quả – LabLuyen", history: "Lịch sử làm bài – LabLuyen", "ai-quiz": "Tạo quiz bằng AI – LabLuyen", review: "Ôn tập ngắt quãng – LabLuyen", stats: "Thống kê kiến thức – LabLuyen", live: "Đấu trắc nghiệm trực tiếp – LabLuyen", about: "Giới thiệu – LabLuyen", profile: "Thành tích – LabLuyen" };
     document.title = titles[name] || titles[""];
     if (name !== "take" && name !== "practice" && name !== "result") ctx = { mode: "none", answers: {}, checked: {}, list: [] };
 
@@ -2348,7 +2559,7 @@
       case "take": renderTake(); break;
       case "result": renderResult(rest[0]); break;
       case "history": renderHistory(); break;
-      case "ai-quiz": case "stats": case "live": case "about": case "profile":
+      case "ai-quiz": case "review": case "stats": case "live": case "about": case "profile":
         if (window.LabFeatures?.[name]) window.LabFeatures[name](rest, params);
         else renderNotFound();
         break;
@@ -2617,6 +2828,7 @@
       case "dd-remove": ddRemove(el.dataset.q, el.dataset.chip); break;
       case "ask-ai": openAiChat(el.dataset.q); break;
       case "chat-suggest": sendChat(el.dataset.text); break;
+      case "ai-rate": rateAiAnswer(Number(el.dataset.i), Number(el.dataset.rating)); break;
       case "open-exam-settings": openExamSettings(el.dataset.exam); break;
       case "export-exam": {
         const ex = examById.get(el.dataset.exam);
@@ -2650,6 +2862,8 @@
       case "confirm-submit": finishExam(false); break;
       case "exit-exam": confirmExit(); break;
       case "discard-exam":
+        Track.end(examHolder, "abandon");
+        examHolder.track = null;
         clearSession();
         closeModal();
         location.hash = "#/exams";

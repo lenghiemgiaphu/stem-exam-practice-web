@@ -1,81 +1,75 @@
+/* Gia sư AI — gọi qua máy chủ (POST /api/ai-explain).
+ * Khóa Gemini chỉ nằm ở biến môi trường GEMINI_API_KEY của server, không còn trong file client.
+ * Server cũng ghi thống kê lượt hỏi (token, chi phí, độ trễ, hỏi lại) và trả về interactionId
+ * để người học đánh giá 👍/👎 câu trả lời. */
 const AITutor = (() => {
-  const isConfigured = () =>
-    typeof config !== "undefined" && !!config.GEMINI_API_KEY && !/YOUR_KEY_HERE/.test(config.GEMINI_API_KEY);
+  const fail = (code, message) => {
+    const err = new Error(message || code);
+    err.code = code;
+    return err;
+  };
 
-  function systemPrompt(ctx) {
-    return [
-      "Bạn là gia sư Toán học, Vật lí, Hóa học, Sinh học, Tiếng Anh THPT thân thiện, trả lời bằng tiếng Việt, ngắn gọn và dễ hiểu.",
-      "Hãy giải thích từng bước, nêu rõ kiến thức/công thức liên quan, và chỉ ra lỗi sai thường gặp khi phù hợp.",
-      "Không bịa đặt dữ kiện. Nếu chưa chắc chắn, hãy nói rõ.",
-      "Mọi công thức toán học, ký hiệu và biểu thức phải viết bằng LaTeX: dùng $...$ cho công thức trên cùng dòng và $$...$$ cho công thức đứng riêng một dòng (ví dụ $x^2 - 4x + 3 = 0$, $\\int_0^1 f(x)\\,dx$). Không dùng ký tự Unicode thay cho công thức phức tạp.",
-      ...(ctx.subjectKey === "English"
-        ? [
-            "Với câu hỏi Tiếng Anh: khi học sinh nhờ giải thích câu hỏi, hãy trả lời theo 3 mục có tiêu đề in đậm: **Đáp án đúng**; **Dịch nghĩa** (dịch câu/ngữ cảnh liên quan sang tiếng Việt); **Giải thích ngữ pháp / từ vựng** (nêu cấu trúc, quy tắc, vì sao các đáp án khác sai và vài từ/cụm từ mở rộng). Giữ nguyên từ tiếng Anh, giải thích bằng tiếng Việt. Với câu hỏi phụ của học sinh thì trả lời trực tiếp, không cần đủ 3 mục.",
-          ]
-        : []),
-      "",
-      "BỐI CẢNH CÂU HỎI:",
-      `Môn: ${ctx.subjectLabel}${ctx.grade ? ` - Lớp ${ctx.grade}` : ""} - Chuyên đề: ${ctx.topic}`,
-      ctx.passageText ? `Đoạn văn dùng chung cho câu hỏi:\n${ctx.passageText}` : "",
-      `Câu hỏi: ${ctx.questionText}`,
-      ctx.optionsText ? `Các lựa chọn:\n${ctx.optionsText}` : "",
-      `Đáp án đúng: ${ctx.correctAnswerText}`,
-      `Học sinh đã trả lời: ${ctx.userAnswerText}`,
-      `Giải thích có sẵn: ${ctx.explanation}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  async function ask(ctx, history) {
-    if (!isConfigured()) {
-      const err = new Error("missing-key");
-      err.code = "ai/missing-key";
-      throw err;
+  /**
+   * @param {object} ctx      ngữ cảnh câu hỏi (cùng cấu trúc cũ)
+   * @param {{role:string,text:string}[]} history
+   * @param {{questionId?:string,questionType?:string,subject?:string,topicId?:string,sessionId?:string|null}} [meta]
+   * @returns {Promise<{text:string, interactionId:string|null}>}
+   */
+  async function ask(ctx, history, meta) {
+    const m = meta || {};
+    const analytics = window.Analytics;
+    let response;
+    try {
+      response = await fetch("/api/ai-explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ctx,
+          history,
+          userId: analytics ? analytics.getUserId() : "anon_local",
+          sessionId: m.sessionId || null,
+          questionId: m.questionId || null,
+          questionType: m.questionType || null,
+          subject: m.subject || null,
+          topicId: m.topicId || null,
+        }),
+      });
+    } catch (_) {
+      throw fail("ai/network");
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": config.GEMINI_API_KEY },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt(ctx) }] },
-        contents: history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-        generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
-      }),
-    });
+    // Không chạy trên Next.js (ví dụ mở thẳng public/index.html) → không có API.
+    if (response.status === 404 || response.status === 405) throw fail("ai/unavailable");
 
-    if (!response.ok) {
-      const err = new Error(`gemini-${response.status}`);
-      err.code = `ai/http-${response.status}`;
-      throw err;
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (_) {
+      /* xử lý bên dưới */
     }
-
-    const data = await response.json();
-    const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
-    if (!text) {
-      const err = new Error("empty");
-      err.code = "ai/empty";
-      throw err;
-    }
-    return text;
+    if (!response.ok) throw fail((data && data.code) || `ai/http-${response.status}`, data && data.error);
+    if (!data || !data.answer) throw fail("ai/empty");
+    return { text: String(data.answer), interactionId: data.interactionId || null };
   }
 
   function errorMessage(error) {
     switch (error && error.code) {
       case "ai/missing-key":
-        return "Chưa cấu hình GEMINI_API_KEY. Hãy mở file config.js và thay YOUR_KEY_HERE bằng API key của bạn để bật Gia sư AI.";
-      case "ai/http-400":
-      case "ai/http-403":
-        return "API key không hợp lệ hoặc không có quyền truy cập. Hãy kiểm tra lại GEMINI_API_KEY trong config.js.";
+        return "Gia sư AI chưa được bật: máy chủ chưa cấu hình GEMINI_API_KEY. Vui lòng liên hệ quản trị viên.";
+      case "ai/unavailable":
+        return "Không tìm thấy máy chủ AI. Gia sư AI cần chạy trên Next.js (pnpm dev) hoặc bản đã triển khai.";
       case "ai/http-429":
         return "Đã vượt quá giới hạn yêu cầu. Vui lòng thử lại sau ít phút.";
       case "ai/empty":
         return "AI không trả về nội dung. Hãy thử đặt câu hỏi theo cách khác.";
-      default:
+      case "ai/bad-request":
+        return "Yêu cầu không hợp lệ (nội dung quá dài?). Hãy thử rút gọn câu hỏi.";
+      case "ai/network":
         return "Không thể kết nối tới AI. Vui lòng kiểm tra mạng và thử lại.";
+      default:
+        return "Dịch vụ AI tạm thời không khả dụng. Vui lòng thử lại sau.";
     }
   }
 
-  return { ask, isConfigured, errorMessage };
+  return { ask, errorMessage };
 })();

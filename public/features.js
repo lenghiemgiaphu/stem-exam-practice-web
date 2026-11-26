@@ -603,6 +603,51 @@
   }
 
   /* ---------------------------------------------------------------
+   * Ôn tập ngắt quãng (#/review): các câu đã đến hạn ôn theo thuật toán SM-2 (tính ở server)
+   * ------------------------------------------------------------- */
+  async function renderReview() {
+    const A = window.Analytics;
+    const crumbs = `<nav aria-label="Breadcrumb" class="text-sm text-slate-500"><a href="#/" class="hover:text-indigo-600">Trang chủ</a> <span class="mx-1">/</span> <span class="font-semibold text-slate-700">Ôn tập ngắt quãng</span></nav>`;
+    const shell = (inner) => `<section class="mx-auto max-w-3xl px-4 pb-16 pt-10">${crumbs}
+      <h1 class="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">Ôn tập ngắt quãng</h1>
+      <p class="mt-1.5 text-slate-600">Hệ thống nhắc bạn làm lại đúng những câu đã đến lúc dễ quên: làm đúng thì lần ôn sau cách xa hơn (1 → 6 ngày → lâu hơn), làm sai thì được ôn lại sớm vào ngày hôm sau.</p>
+      <div class="mt-6">${inner}</div></section>`;
+    view.innerHTML = shell('<div class="card p-6 text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2" aria-hidden="true"></i>Đang tải danh sách câu cần ôn...</div>');
+
+    const ids = A ? await A.getDueReview({ limit: 30 }) : []; // luôn là mảng, không bao giờ ném lỗi
+    if (!/^#\/review/.test(location.hash)) return; // người dùng đã chuyển trang trong lúc chờ
+    const list = ids.map((id) => bankById.get(id)).filter(Boolean);
+    const offline = !A || !A.isEnabled();
+
+    if (!list.length) {
+      view.innerHTML = shell(`<div class="card p-8 text-center">
+        <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full ${offline ? "bg-slate-100 text-slate-500" : "bg-emerald-100 text-emerald-600"}"><i class="fa-solid ${offline ? "fa-plug-circle-xmark" : "fa-circle-check"} text-xl" aria-hidden="true"></i></span>
+        <h2 class="mt-4 text-lg font-extrabold text-slate-900">${offline ? "Chưa bật được tính năng này" : "Hôm nay bạn chưa có câu nào cần ôn"}</h2>
+        <p class="mx-auto mt-1.5 max-w-md text-sm text-slate-600">${offline ? "Ôn tập ngắt quãng cần hệ thống thống kê học tập (Supabase) đang hoạt động. Các tính năng luyện tập khác vẫn dùng bình thường." : "Hãy luyện tập thêm: mỗi câu bạn kiểm tra đáp án sẽ được xếp lịch ôn lại tự động."}</p>
+        <a href="#/bank" class="btn btn-primary mt-5">Đến ngân hàng câu hỏi</a></div>`);
+      return;
+    }
+
+    const bySubject = {};
+    list.forEach((q) => (bySubject[q.subject] = (bySubject[q.subject] || 0) + 1));
+    const chips = Object.entries(bySubject).map(([k, n]) => `<span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">${esc(subjOf(k).label)} · ${n}</span>`).join("");
+    view.innerHTML = shell(`<div class="card p-6">
+      <p class="text-sm font-semibold text-slate-500">Đang chờ ôn</p>
+      <p class="mt-1 text-4xl font-extrabold text-slate-900">${list.length} <span class="text-lg font-bold text-slate-500">câu</span></p>
+      <div class="mt-3 flex flex-wrap gap-1.5">${chips}</div>
+      <button type="button" id="review-start" class="btn btn-primary btn-lg mt-6"><i class="fa-solid fa-play" aria-hidden="true"></i>Bắt đầu ôn tập</button></div>`);
+    $("#review-start")?.addEventListener("click", () => {
+      const first = list[0];
+      startPracticeSession({
+        list,
+        meta: { subject: first.subject, grade: first.grade, topic: "Ôn tập ngắt quãng", types: [], levels: [], spacedReview: true },
+        crumbs,
+        heading: "Ôn tập ngắt quãng",
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------------
    * Router hooks
    * ------------------------------------------------------------- */
   window.LabFeatures = {
@@ -613,7 +658,8 @@
       renderQuizDetail(id);
     },
     stats: () => renderStats(),
+    review: () => renderReview(),
   };
 
-  if (/^#\/(ai-quiz|stats)/.test(location.hash)) App.route();
+  if (/^#\/(ai-quiz|stats|review)/.test(location.hash)) App.route();
 })();

@@ -17,10 +17,8 @@ const Analytics = (() => {
 
   const KEY = {
     anon: "labluyen_anon_id", // mã khách ẩn danh, cố định theo trình duyệt
-    cohort: "labluyen_cohort", // cờ cohort Nâng Cao Nguyên, giữ xuyên các phiên
-    ref: "labluyen_ref", // nguồn giới thiệu đầu tiên
+    ref: "labluyen_ref", // nguồn truy cập đầu tiên (first-touch), giữ xuyên các phiên
   };
-  const COHORT_NCN = "nang_cao_nguyen";
   const REQUEST_TIMEOUT_MS = 15000;
   const ATTEMPT_CHUNK = 200; // khớp giới hạn của POST /api/analytics/attempts
 
@@ -87,7 +85,7 @@ const Analytics = (() => {
     return { id: anonId(), provider: "anonymous" };
   }
 
-  /* ---------- Cohort / nguồn giới thiệu (?cohort=ncn, ?ref=nangcaonguyen) ---------- */
+  /* ---------- Nguồn truy cập tự nhiên (referral_source, first-touch) ---------- */
   const cleanRef = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 64);
 
   function urlParamSets() {
@@ -108,18 +106,34 @@ const Analytics = (() => {
     return sets;
   }
 
-  function detectCohort() {
+  /**
+   * Xác định nguồn truy cập ở lần đầu người dùng ghé trang trên trình duyệt này, theo thứ tự:
+   *   1) tham số ?ref= / ?utm_source= / ?source=
+   *   2) tên miền của trang giới thiệu (document.referrer) nếu khác tên miền hiện tại
+   *   3) "direct" (gõ thẳng địa chỉ, đánh dấu trang, ứng dụng chat không gửi referrer...)
+   * Chỉ ghi một lần; các lần truy cập sau không ghi đè.
+   */
+  function detectReferral() {
+    if (store.get(KEY.ref)) return;
     for (const params of urlParamSets()) {
-      const cohort = cleanRef(params.get("cohort"));
-      const ref = cleanRef(params.get("ref"));
-      if (cohort === "ncn" || ref === "nangcaonguyen") store.set(KEY.cohort, COHORT_NCN);
-      // Nguồn giới thiệu: giữ lần đầu tiên (first-touch), không bị ghi đè bởi các lần sau.
-      const source = ref || (cohort ? `cohort_${cohort}` : "");
-      if (source && !store.get(KEY.ref)) store.set(KEY.ref, source);
+      const tagged = cleanRef(params.get("ref") || params.get("utm_source") || params.get("source"));
+      if (tagged) {
+        store.set(KEY.ref, tagged);
+        return;
+      }
     }
+    try {
+      const referrer = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, "") : "";
+      const own = String(window.location.hostname || "").replace(/^www\./, "");
+      if (referrer && referrer !== own) {
+        store.set(KEY.ref, cleanRef(referrer));
+        return;
+      }
+    } catch (_) {
+      /* bỏ qua */
+    }
+    store.set(KEY.ref, "direct");
   }
-
-  const cohortTag = () => (store.get(KEY.cohort) === COHORT_NCN ? COHORT_NCN : "general");
 
   /* ---------- Gửi request (không bao giờ ném lỗi) ---------- */
   async function post(path, payload, options) {
@@ -192,14 +206,12 @@ const Analytics = (() => {
   async function identify(force) {
     try {
       const user = currentUser();
-      const tag = cohortTag();
-      const signature = `${user.id}|${user.provider}|${tag}`;
+      const signature = `${user.id}|${user.provider}`;
       if (!force && state.identifiedSig === signature) return null;
       state.identifiedSig = signature;
       const result = await post("/api/analytics/identify", {
         userId: user.id,
         authProvider: user.provider,
-        cohortTag: tag,
         referralSource: text(store.get(KEY.ref)),
       });
       if (!result) state.identifiedSig = ""; // lỗi mạng: cho phép thử lại ở lần kích hoạt sau
@@ -374,7 +386,7 @@ const Analytics = (() => {
   /* ---------- Khởi động ---------- */
   function init() {
     try {
-      detectCohort();
+      detectReferral();
       if (typeof Auth !== "undefined" && Auth && typeof Auth.onChange === "function") {
         // Auth phát sự kiện khi Firebase xác định xong trạng thái đăng nhập (hoặc ngay lập tức
         // ở chế độ khách khi chưa cấu hình Firebase). Nhờ vậy hồ sơ luôn gắn đúng uid/anon.
@@ -393,7 +405,7 @@ const Analytics = (() => {
   return {
     getUserId: () => currentUser().id,
     getAuthProvider: () => currentUser().provider,
-    getCohortTag: cohortTag,
+    getReferralSource: () => store.get(KEY.ref) || "direct",
     isEnabled: () => !state.disabled,
     identify,
     startSession,

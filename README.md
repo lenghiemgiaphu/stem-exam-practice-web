@@ -122,7 +122,7 @@ Build a printable paper from any question set: choose the number of questions an
          v                  v                     v actions            v
   +--------------+   +------------------------------------------------+  +-----------+
   | Gemini API   |   |              Next.js 16 route handlers          |  | Firebase  |
-  | (AI tutor)   |   |  /api/generate-quiz            /api/live        |  | Auth      |
+  | (via server) |   |  /api/generate-quiz  /api/live  /api/ai-explain |  | Auth      |
   +--------------+   |  - rate limit (per IP)         - zod-validated  |  | (Google / |
                      |  - extract text / pass files     discriminated  |  |  email)   |
                      |  - SSRF-safe fetch               actions        |  +-----------+
@@ -195,13 +195,15 @@ Build a printable paper from any question set: choose the number of questions an
 │   │   ├── generate-quiz/route.ts   # AI quiz generation (multipart upload / link / YouTube / text)
 │   │   ├── live/route.ts            # Live battle API (create, join, start, next, end, answer, state)
 │   │   ├── ai-explain/route.ts      # AI tutor proxy (server-side Gemini call + usage logging to Supabase)
+│   │   ├── admin/analytics/         # Admin API (login/logout, summary, facets, export) — cookie-protected
 │   │   └── analytics/               # Learning analytics API (writes to Supabase via the service role key)
-│   │       ├── identify/route.ts    #   upsert learner profile / cohort tag
+│   │       ├── identify/route.ts    #   upsert learner profile / referral source
 │   │       ├── session/route.ts     #   start | complete | abandon a study session (sendBeacon-friendly)
 │   │       ├── attempts/route.ts    #   save question attempts + SM-2 spaced-repetition schedule
 │   │       ├── due-review/route.ts  #   GET question ids that are due for spaced review
 │   │       └── ai-feedback/route.ts #   👍 / 👎 rating of an AI answer
 │   ├── globals.css                  # Tailwind + design tokens
+│   ├── admin/analytics/             # /admin/analytics dashboard (server page + client login form & dashboard)
 │   ├── layout.tsx                   # Root layout, metadata, analytics
 │   └── page.tsx                     # Redirects to the static SPA
 ├── components/ui/button.tsx         # shadcn/ui primitives
@@ -209,6 +211,7 @@ Build a printable paper from any question set: choose the number of questions an
 │   ├── supabase/server.ts           # Server-only Supabase client (service role); returns null when unconfigured
 │   ├── analytics/                   # Shared helpers: zod schemas, SM-2, rate limit, HTTP helpers, constants
 │   ├── ai/gemini.ts                 # Tutor prompt, Gemini REST call, token/cost accounting
+│   ├── admin/                       # Admin auth (HMAC cookie), filters, loaders, aggregation, CSV/JSON export (server-only; types.ts is client-safe)
 │   ├── live/engine.ts               # Room state machine, scoring, Redis storage, rate limiting
 │   ├── quiz/
 │   │   ├── schema.ts                # Zod schemas + question normalization
@@ -218,15 +221,15 @@ Build a printable paper from any question set: choose the number of questions an
 │   └── utils.ts
 ├── public/                          # Static single-page app
 │   ├── index.html                   # App shell and navigation
-│   ├── config.js                    # Client-side keys (Gemini, Firebase) — template
+│   ├── config.js                    # Client-side config (Firebase only) — template
 │   ├── data.js / data-extra.js      # Subject config, exam schema, Physics/Chemistry/Biology questions, mock exams
 │   ├── math.js                      # KaTeX auto-render (scans the page and observes new content)
 │   ├── data-passages.js             # Shared passage schema (Reading / Cloze) + passageBank
 │   ├── data-math.js                 # Mathematics questions (grades 10–12, LaTeX) + 2 exams
 │   ├── data-english.js              # English questions (grades 10–12), shared passages, structured explanations + 2 exams
 │   ├── app.js                       # Router, practice, exams, grading, history
-│   ├── ai.js                        # AI tutor client (still calls Gemini directly until the server proxy is wired in)
-│   ├── analytics.js                 # Analytics client: anon/Firebase user id, cohort detection, non-blocking API calls
+│   ├── ai.js                        # AI tutor client (calls POST /api/ai-explain; 👍/👎 rating)
+│   ├── analytics.js                 # Analytics client: anon/Firebase user id, referral source, non-blocking API calls, sendBeacon on exit
 │   ├── auth.js                      # Firebase Auth wrapper
 │   ├── features.js                  # AI quiz UI + statistics (personal / class)
 │   ├── game.js                      # XP, levels, streaks, badges
@@ -234,8 +237,9 @@ Build a printable paper from any question set: choose the number of questions an
 │   ├── export.js                    # Printable exam builder (PDF / Word)
 │   ├── about.js                     # Product introduction page
 │   └── style.css
-├── supabase/migrations/             # SQL to run in the Supabase SQL Editor (001_analytics_schema.sql)
-├── docs/SUPABASE_SETUP.md           # Step-by-step Supabase setup guide (Vietnamese)
+├── supabase/migrations/             # SQL to run in the Supabase SQL Editor, in order: 001, 002, 003
+├── docs/SUPABASE_SETUP.md           # Step-by-step Supabase + deployment guide (Vietnamese)
+├── scripts/audit-security.mjs       # `pnpm audit:security` — no server secret may reach the client
 ├── .env.example                     # Server environment variables
 ├── next.config.mjs                  # `/` -> `/index.html` rewrite
 ├── package.json
@@ -274,12 +278,12 @@ Each integration is optional and independent:
 
 | Feature | Requires | Behaviour when missing |
 | :--- | :--- | :--- |
-| **AI tutor** | `GEMINI_API_KEY` in `public/config.js` | Tutor panel shows a message explaining how to enable it. |
 | **Sign-in** | `firebase` block in `public/config.js` (+ Google and Email/Password providers enabled, your domain in *Authorized domains*) | App runs in guest mode. |
 | **AI quiz generator** | AI Gateway access for the model in `QUIZ_MODEL` (default `google/gemini-3.8-flash`) | API returns a clear "AI service not enabled" error. |
 | **Live battles** | Upstash Redis REST credentials | API returns a clear "Redis not connected" error. |
 | **Learning analytics** | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` and the SQL in `supabase/migrations/` (see [`docs/SUPABASE_SETUP.md`](./docs/SUPABASE_SETUP.md)) | `/api/analytics/*` answers `{ ok: false, disabled: true }` and `public/analytics.js` stops calling; learning is unaffected. |
-| **AI tutor via server** | `GEMINI_API_KEY` (+ optional `GEMINI_MODEL`) in server env | `/api/ai-explain` returns `503 ai/missing-key`. |
+| **AI tutor** | `GEMINI_API_KEY` (+ optional `GEMINI_MODEL`) in **server** env — the browser calls `/api/ai-explain`; no key lives in `public/` | Tutor panel explains that the server has no key (`503 ai/missing-key`). |
+| **Admin dashboard** | `ADMIN_ANALYTICS_SECRET` (≥ 12 chars) in server env | `/admin/analytics` shows “not enabled”; admin APIs return 503/401. |
 
 **Server environment variables** (`.env.local`):
 
@@ -292,7 +296,7 @@ SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...        # server only, never NEXT_PUBLIC_
 GEMINI_API_KEY=...
 GEMINI_MODEL=gemini-2.5-flash
-ADMIN_ANALYTICS_SECRET=...           # reserved for the admin stats page
+ADMIN_ANALYTICS_SECRET=...           # ≥ 12 chars; protects /admin/analytics and /api/admin/*
 
 # Live battles — either naming scheme is accepted
 KV_REST_API_URL=...
@@ -306,8 +310,6 @@ UPSTASH_REDIS_REST_TOKEN=...
 
 ```js
 const config = {
-  GEMINI_API_KEY: "YOUR_KEY_HERE",
-  GEMINI_MODEL: "gemini-2.5-flash",
   firebase: {
     apiKey: "YOUR_FIREBASE_API_KEY",
     authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -317,7 +319,7 @@ const config = {
 };
 ```
 
-> ⚠️ **Never commit real keys.** Everything in `public/` is downloaded by every visitor. Keep the committed `config.js` as a placeholder template, and see §9 for how to move the Gemini call behind your own server before going to production.
+> ⚠️ **Never commit real keys.** Everything in `public/` is downloaded by every visitor. Keep the committed `config.js` as a placeholder template. Gemini and Supabase keys are **server environment variables only**; run `pnpm audit:security` to verify nothing secret reaches `public/` or a client component.
 
 ### 6.4 Deployment
 
@@ -360,7 +362,7 @@ All endpoints are same-origin JSON APIs that write through the Supabase **servic
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
-| `POST` | `/api/analytics/identify` | Upsert the learner profile; keeps `first_seen_at`, updates `last_seen_at`, can only *raise* `cohort_tag` to `nang_cao_nguyen`. |
+| `POST` | `/api/analytics/identify` | Upsert the learner profile for every user; keeps `first_seen_at`, updates `last_seen_at`, records the first-touch `referral_source` (`?ref=` / `?utm_source=`, referrer domain, or `direct`). `cohort_tag` stays `general` (free-form, no CHECK constraint). |
 | `POST` | `/api/analytics/session` | `action: start` → `{ sessionId }`; `complete` / `abandon` (accepts `navigator.sendBeacon`). |
 | `POST` | `/api/analytics/attempts` | Store attempts; server derives `attempt_context` (`initial` / `retest` after 7–14 days / `spaced_review`), `is_first_try_in_session`, `was_scheduled_on_time`, and updates the SM-2 schedule. |
 | `GET` | `/api/analytics/due-review?userId=` | Question ids with `next_review_at <= now`. |
@@ -368,6 +370,21 @@ All endpoints are same-origin JSON APIs that write through the Supabase **servic
 | `POST` | `/api/analytics/ai-feedback` | Set `helpfulness_rating` (`1` / `-1`) for an `interactionId`. |
 
 When Supabase is not configured the analytics endpoints respond `200 { ok: false, disabled: true }`; `/api/ai-explain` still answers (with `interactionId: null`).
+
+**Tracking coverage** (all fire-and-forget from `public/app.js` via `Analytics`, errors swallowed): practice, exam and spaced-review sessions → `study_sessions` (`started` / `completed` / `abandoned` + `drop_off_question_index`; leaving the page uses `navigator.sendBeacon`); each checked question → `question_attempts`; SM-2 schedule → `spaced_repetition_items` (the **Ôn tập** page `#/review` starts a `spaced_review` session from `GET /api/analytics/due-review`); AI tutor → `ai_interactions` with 👍/👎.
+
+### Admin dashboard (`/admin/analytics`)
+
+Protected by `ADMIN_ANALYTICS_SECRET`: the code is typed into a form, compared in constant time, and exchanged for an **HTTP-only, SameSite=Strict** cookie holding an HMAC-signed expiry token (8 h). The secret itself never reaches the browser; changing it invalidates all sessions; login is rate-limited.
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/api/admin/analytics/login` · `logout` | Start / end an admin session. |
+| `GET` | `/api/admin/analytics/summary` | Four metric groups (overview, learning, SM-2, AI & cost) for the filters `range` (`7d`/`30d`/`90d`/`custom` + `from`,`to`), `subject`, `topicId`, `sessionType`, `authType`. |
+| `GET` | `/api/admin/analytics/facets` | Subjects / topics for the filter dropdowns. |
+| `GET` | `/api/admin/analytics/export` | `format=csv\|json`, `level=summary\|sessions\|attempts\|srs\|ai`; detail levels replace `user_id` with a keyed one-way hash. |
+
+Aggregation runs in TypeScript on the server (parallel pagination, 50 000-row cap per dataset; the dashboard warns when a dataset is truncated). Days are bucketed in Vietnam time (UTC+7).
 
 ---
 
@@ -388,7 +405,7 @@ When Supabase is not configured the analytics endpoints respond `200 { ok: false
 
 ## 9. Scope, Limitations & Caveats
 
-1. **Gemini key is client-side (until `ai.js` is switched over).** The AI tutor still calls the Gemini API directly from the browser, so the key in `public/config.js` is visible to every visitor. The server proxy `POST /api/ai-explain` is already available; once `public/ai.js` is pointed at it, remove the key from `config.js`. Analytics identity is client-asserted (no Firebase ID-token verification yet), so treat the statistics as indicative, not tamper-proof.
+1. **Analytics identity is client-asserted.** `user_id` comes from the browser (Firebase `uid` or `anon_<uuid>`) and is not verified against a Firebase ID token, so statistics are indicative, not tamper-proof. The Gemini key is now server-side only (`/api/ai-explain`). Server-side rate limits are in-memory per instance (best effort).
 2. **Progress is local.** XP, streaks, badges, history and saved quizzes are stored in `localStorage`: they do not sync across devices, can be cleared by the browser, and can be edited by the user. Do not use them for high-stakes assessment.
 3. **Quiz generation limits are best-effort.** The 10-requests-per-10-minutes limiter on `/api/generate-quiz` is held in memory, so it is per server instance and resets on cold starts. Use the Redis-backed limiter (already used by live battles) if you need strict enforcement.
 4. **AI output is unverified.** Generated questions and tutor explanations can be wrong. Teachers should review a quiz before using it for assessment (the About page says so too).
@@ -402,7 +419,7 @@ When Supabase is not configured the analytics endpoints respond `200 { ok: false
 
 | Priority | Item |
 | :--- | :--- |
-| High | Move the AI tutor behind a server route; add Redis-backed rate limiting to quiz generation; fix package name / metadata; remove `ignoreBuildErrors`. |
+| High | Add Redis-backed rate limiting to quiz generation and analytics; verify Firebase ID tokens for analytics; fix package name / metadata; remove `ignoreBuildErrors`. |
 | High | Add unit tests for grading, level math, quiz normalization and SSRF guards; add GitHub Actions CI. |
 | Medium | Optional cloud sync of progress (Firestore or Redis) for signed-in users; teacher accounts with persistent class rosters. |
 | Medium | Expand the question bank and add real past-paper imports; support `.doc` / `.ppt` via conversion. |

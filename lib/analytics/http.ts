@@ -12,8 +12,8 @@ export function disabledResponse(extra: Record<string, unknown> = {}) {
   return NextResponse.json({ ok: false, disabled: true, ...extra }, { headers: NO_STORE })
 }
 
-export function json(body: Record<string, unknown>, status = 200) {
-  return NextResponse.json(body, { status, headers: NO_STORE })
+export function json(body: Record<string, unknown>, status = 200, headers: Record<string, string> = {}) {
+  return NextResponse.json(body, { status, headers: { ...NO_STORE, ...headers } })
 }
 
 /** Đọc JSON an toàn: hỗ trợ cả `navigator.sendBeacon` (Content-Type có thể là text/plain). */
