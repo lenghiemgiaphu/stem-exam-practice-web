@@ -16,15 +16,16 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   try {
     assertSameOrigin(req)
-    const body = bodySchema.parse(await readJson(req))
-    enforceRateLimit(req, 'ai-feedback', body.userId, { ip: 120, user: 30 })
-
+    // Chưa cấu hình Supabase → 200 { disabled: true } ngay (xem ghi chú ở identify/route.ts).
     const supabase = getSupabaseAdmin()
     if (!supabase) return disabledResponse()
 
+    const body = bodySchema.parse(await readJson(req))
+    enforceRateLimit(req, 'ai-feedback', body.userId, { ip: 120, user: 30 })
+
     const { data, error } = await supabase
       .from('ai_interactions')
-      .update({ helpfulness_rating: body.rating })
+      .update({ feedback_rating: body.rating })
       .eq('id', body.interactionId)
       .eq('user_id', body.userId) // chỉ người đã hỏi mới đánh giá được
       .select('id')

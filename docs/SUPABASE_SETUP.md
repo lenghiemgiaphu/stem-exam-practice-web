@@ -11,7 +11,7 @@ Tài liệu này dẫn bạn từ con số 0 đến khi **thấy dữ liệu xu�
 | :--- | :--- |
 | `public/analytics.js` | Trình duyệt tự sinh mã `anon_<uuid>` (hoặc dùng Firebase `uid`), ghi nhận nguồn truy cập, gửi thống kê **không chặn** việc học (lỗi nào cũng bị nuốt). |
 | `app/api/analytics/*`, `app/api/ai-explain` | Route chạy ở **server**, ghi vào Supabase bằng `SUPABASE_SERVICE_ROLE_KEY`. Trình duyệt không bao giờ nói chuyện trực tiếp với Supabase. |
-| 5 bảng Supabase | `user_analytics_profiles`, `study_sessions`, `question_attempts`, `spaced_repetition_items`, `ai_interactions` (bật RLS, không có quyền cho client). |
+| 5 bảng Supabase | `learner_profiles`, `study_sessions`, `question_attempts`, `spaced_repetition`, `ai_interactions` (bật RLS, không có quyền cho client). |
 | `/admin/analytics` | Dashboard cho quản trị viên, bảo vệ bằng `ADMIN_ANALYTICS_SECRET`. |
 
 Chưa cấu hình Supabase thì **mọi tính năng học vẫn chạy bình thường**; chỉ thiếu thống kê, trang Ôn tập và nút đánh giá AI.
@@ -24,7 +24,7 @@ Chưa cấu hình Supabase thì **mọi tính năng học vẫn chạy bình th�
 2. **Name**: `labluyen` (tùy ý). **Database password**: đặt mật khẩu mạnh và lưu lại. **Region**: chọn **Southeast Asia (Singapore)** để độ trễ thấp nhất cho người dùng Việt Nam.
 3. **Create new project**, đợi 1–2 phút tới khi sẵn sàng.
 
-## Bước 2 — Chạy 3 file SQL migration (đúng thứ tự)
+## Bước 2 — Chạy các file SQL migration (đúng thứ tự)
 
 Vào **SQL Editor** (biểu tượng `>_`) → **New query**. Với **từng file** dưới đây, theo thứ tự: mở file trong thư mục `supabase/migrations/`, **sao chép toàn bộ**, dán vào ô soạn thảo, bấm **Run** (kết quả mong đợi: `Success. No rows returned`).
 
@@ -33,10 +33,14 @@ Vào **SQL Editor** (biểu tượng `>_`) → **New query**. Với **từng fil
 | 1 | `001_analytics_schema.sql` | Tạo 5 bảng, chỉ mục, bật RLS. |
 | 2 | `002_generalize_user_profiles.sql` | Gỡ ràng buộc `CHECK` cứng trên `cohort_tag`; mặc định `'general'`; nguồn truy cập ghi ở `referral_source`. Dữ liệu cũ được đưa về `general` (nguồn cũ giữ lại trong `referral_source`). |
 | 3 | `003_admin_dashboard_indexes.sql` | Thêm chỉ mục cho trang quản trị. |
+| 4 | `004_align_handover_schema.sql` | Đưa tên bảng/cột về đúng bản bàn giao Đợt 1 (xem khung bên dưới). **Cài mới: chạy cũng được, không làm gì. Đã có dữ liệu từ bản cũ: bắt buộc.** |
 
 > `001` vẫn chứa ràng buộc `CHECK` ban đầu **có chủ đích** (file migration đã chạy thì không sửa lại); `002` gỡ nó. Cả cài mới lẫn cài cũ đều về cùng một trạng thái cuối.
 
-**Kiểm tra:** mở **Table Editor**: phải thấy **5 bảng**, mỗi bảng có nhãn **RLS enabled**.
+> ⚠️ **Đã chạy `001`–`003` của bản CŨ (trước Đợt 1)?** Tên cũ → tên mới: `user_analytics_profiles` → `learner_profiles`, `spaced_repetition_items` → `spaced_repetition`, `study_sessions.completed_at` → `ended_at`, `study_sessions.status = 'started'` → `'active'`, `ai_interactions.helpfulness_rating` → `feedback_rating`.
+> **Chỉ cần chạy `004_align_handover_schema.sql`** — nó đổi tên tại chỗ, **không mất dữ liệu** — và phải chạy **trước hoặc cùng lúc** với việc triển khai code mới (code mới đọc/ghi theo tên mới). **Đừng chạy lại `001` mới trước `004`**: nó sẽ tạo bảng trống mang tên mới bên cạnh bảng cũ còn dữ liệu (khi đó `004` sẽ dừng lại và báo lỗi rõ ràng thay vì đoán).
+
+**Kiểm tra:** mở **Table Editor**: phải thấy đúng **5 bảng** `learner_profiles`, `study_sessions`, `question_attempts`, `spaced_repetition`, `ai_interactions`, mỗi bảng có nhãn **RLS enabled**.
 
 ## Bước 3 — Lấy `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -70,17 +74,17 @@ Mở Supabase **Table Editor** ở một tab riêng và bấm **Refresh** sau m�
 
 | # | Thao tác trên web | Kết quả cần thấy trong Supabase |
 | :---: | :--- | :--- |
-| 1 | Mở <http://localhost:3000> | **`user_analytics_profiles`**: 1 dòng mới `user_id = anon_…`, `cohort_tag = general`, `referral_source = direct`. Thử thêm `?ref=facebook` ở một trình duyệt ẩn danh để thấy nguồn `facebook`. |
-| 2 | **Ngân hàng câu hỏi** → chọn chuyên đề → **Bắt đầu luyện tập** | **`study_sessions`**: 1 dòng `session_type = topic_practice`, `status = started`. |
-| 3 | Trả lời 3–4 câu, mỗi câu bấm **Kiểm tra** (cố tình sai 1 câu) | **`question_attempts`**: mỗi câu 1 dòng, `attempt_context = initial`, `is_first_try_in_session = true`. **`spaced_repetition_items`**: mỗi câu 1 dòng; câu đúng `interval_days = 1, repetitions = 1`, câu sai `interval_days = 1, repetitions = 0`; `next_review_at` ≈ ngày mai. |
+| 1 | Mở <http://localhost:3000> | **`learner_profiles`**: 1 dòng mới `user_id = anon_…`, `cohort_tag = general`, `referral_source = direct`. Thử thêm `?ref=facebook` ở một trình duyệt ẩn danh để thấy nguồn `facebook`. |
+| 2 | **Ngân hàng câu hỏi** → chọn chuyên đề → **Bắt đầu luyện tập** | **`study_sessions`**: 1 dòng `session_type = topic_practice`, `status = active`. |
+| 3 | Trả lời 3–4 câu, mỗi câu bấm **Kiểm tra** (cố tình sai 1 câu) | **`question_attempts`**: mỗi câu 1 dòng, `attempt_context = initial`, `is_first_try_in_session = true`. **`spaced_repetition`**: mỗi câu 1 dòng; câu đúng `interval_days = 1, repetitions = 1`, câu sai `interval_days = 1, repetitions = 0`; `next_review_at` ≈ ngày mai. |
 | 4 | Bấm **Làm lại câu này** rồi kiểm tra lại | Thêm 1 dòng ở `question_attempts` với `is_first_try_in_session = false`; lịch ôn **không đổi** (SM-2 chỉ tính lần đầu của mỗi câu trong phiên). |
-| 5 | Bấm **Kết thúc** → xác nhận | `study_sessions`: `status = completed`, `score`, `answered_questions`, `correct_count`, `completed_at`. |
+| 5 | Bấm **Kết thúc** → xác nhận | `study_sessions`: `status = completed`, `score`, `answered_questions`, `correct_count`, `ended_at`. |
 | 6 | Bắt đầu một phiên luyện tập khác, trả lời vài câu rồi **đóng tab** (hoặc tải lại trang) | Dòng phiên đó chuyển `status = abandoned` kèm `drop_off_question_index` (gửi bằng `navigator.sendBeacon`). |
 | 7 | Mở **Đề thi** → làm đề → **Nộp bài** | `study_sessions` có phiên `session_type = exam`, `exam_id` điền, `completed`; thêm các dòng `question_attempts` cho câu đã làm. |
 | 8 | Mở một câu → **Gia sư AI** → hỏi 1 câu | **`ai_interactions`**: 1 dòng có `model_name`, `input_tokens`, `output_tokens`, `estimated_cost_usd`, `latency_ms`, `is_requery = false`. |
-| 9 | Bấm 👍 (hoặc 👎) dưới câu trả lời của AI | `ai_interactions.helpfulness_rating` = `1` (hoặc `-1`). |
+| 9 | Bấm 👍 (hoặc 👎) dưới câu trả lời của AI | `ai_interactions.feedback_rating` = `1` (hoặc `-1`). |
 | 10 | Trong vòng 10 phút, hỏi AI **lại cùng câu hỏi đó** | Dòng mới có `is_requery = true`. |
-| 11 | **Ôn tập ngắt quãng.** Câu vừa làm hẹn ngày mai nên chưa đến hạn. Để thử ngay: SQL Editor chạy `update public.spaced_repetition_items set next_review_at = now() - interval '1 hour';` rồi mở tab **Ôn tập** trên web | Trang hiện "N câu đang chờ ôn". Bấm **Bắt đầu ôn tập**, làm vài câu: `study_sessions` có phiên `spaced_review`; `question_attempts` có `attempt_context = spaced_review`, `was_scheduled_on_time = true`; lịch trong `spaced_repetition_items` được cập nhật (`last_reviewed_at`, `next_review_at` lùi xa hơn khi làm đúng). |
+| 11 | **Ôn tập ngắt quãng.** Câu vừa làm hẹn ngày mai nên chưa đến hạn. Để thử ngay: SQL Editor chạy `update public.spaced_repetition set next_review_at = now() - interval '1 hour';` rồi mở tab **Ôn tập** trên web | Trang hiện "N câu đang chờ ôn". Bấm **Bắt đầu ôn tập**, làm vài câu: `study_sessions` có phiên `spaced_review`; `question_attempts` có `attempt_context = spaced_review`, `was_scheduled_on_time = true`; lịch trong `spaced_repetition` được cập nhật (`last_reviewed_at`, `next_review_at` lùi xa hơn khi làm đúng). |
 | 12 | **Thử `retest`** (làm lại sau 7–14 ngày): trong SQL Editor chạy `update public.question_attempts set created_at = now() - interval '10 days';` rồi làm lại một câu cũ ở **phiên luyện tập mới** | Dòng `question_attempts` mới của câu đó có `attempt_context = retest`. |
 
 Lấy `user_id` của bạn nếu cần: mở F12 → Console → gõ `Analytics.getUserId()`. Kiểm tra API câu đến hạn: <http://localhost:3000/api/analytics/due-review?userId=anon_…>.
@@ -122,7 +126,7 @@ pnpm audit:security   # không khóa server nào lọt ra client; mọi API qu�
 | Triệu chứng | Nguyên nhân thường gặp |
 | :--- | :--- |
 | API trả `{"ok":false,"disabled":true}` / không có dữ liệu | Thiếu hoặc sai `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`; chưa khởi động lại `pnpm dev` sau khi sửa `.env.local`; trên Vercel chưa Redeploy. |
-| Log server có `relation ... does not exist` | Chưa chạy file SQL (bước 2). |
+| Log server có `relation ... does not exist` hoặc `column ... does not exist` | Chưa chạy file SQL (bước 2). Nếu trước đây đã chạy `001`–`003` bản cũ: chạy `004_align_handover_schema.sql`. |
 | Log server có `permission denied` | Đang dùng nhầm khóa `anon`/`publishable` thay vì `service_role`/`secret`. |
 | Cột `cohort_tag` báo vi phạm `check constraint` | Chưa chạy `002_generalize_user_profiles.sql`. |
 | Trang Ôn tập báo "Chưa bật được tính năng này" | Supabase chưa cấu hình (xem dòng đầu), hoặc chưa có câu nào đến hạn (xem mẹo ở bước 5.11). |

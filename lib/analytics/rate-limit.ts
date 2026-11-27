@@ -34,11 +34,15 @@ interface Limits {
   user?: number
 }
 
-export function enforceRateLimit(req: Request, scope: string, userId: string | undefined, limits: Limits) {
+/**
+ * @param bucket tên nhóm giới hạn (mỗi endpoint một nhóm riêng, ví dụ 'attempts', 'ai-explain').
+ * Ném HttpError(429) khi IP hoặc user vượt ngưỡng trong 1 phút.
+ */
+export function enforceRateLimit(req: Request, bucket: string, userId: string | undefined, limits: Limits) {
   const windowMs = 60_000
   const now = Date.now()
   sweep(now, windowMs)
-  const okIp = take(`${scope}:ip:${clientIp(req)}`, limits.ip, windowMs, now)
-  const okUser = !userId || !limits.user || take(`${scope}:user:${userId}`, limits.user, windowMs, now)
+  const okIp = take(`${bucket}:ip:${clientIp(req)}`, limits.ip, windowMs, now)
+  const okUser = !userId || !limits.user || take(`${bucket}:user:${userId}`, limits.user, windowMs, now)
   if (!okIp || !okUser) throw new HttpError(429, 'Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.')
 }

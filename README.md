@@ -237,7 +237,7 @@ Build a printable paper from any question set: choose the number of questions an
 │   ├── export.js                    # Printable exam builder (PDF / Word)
 │   ├── about.js                     # Product introduction page
 │   └── style.css
-├── supabase/migrations/             # SQL to run in the Supabase SQL Editor, in order: 001, 002, 003
+├── supabase/migrations/             # SQL to run in the Supabase SQL Editor, in order: 001, 002, 003, 004 (004 renames legacy tables/columns to the handover names)
 ├── docs/SUPABASE_SETUP.md           # Step-by-step Supabase + deployment guide (Vietnamese)
 ├── scripts/audit-security.mjs       # `pnpm audit:security` — no server secret may reach the client
 ├── .env.example                     # Server environment variables
@@ -367,11 +367,11 @@ All endpoints are same-origin JSON APIs that write through the Supabase **servic
 | `POST` | `/api/analytics/attempts` | Store attempts; server derives `attempt_context` (`initial` / `retest` after 7–14 days / `spaced_review`), `is_first_try_in_session`, `was_scheduled_on_time`, and updates the SM-2 schedule. |
 | `GET` | `/api/analytics/due-review?userId=` | Question ids with `next_review_at <= now`. |
 | `POST` | `/api/ai-explain` | Server-side Gemini proxy → `{ answer, interactionId }`; logs tokens, estimated cost, latency and `is_requery` (same question asked within 10 min). |
-| `POST` | `/api/analytics/ai-feedback` | Set `helpfulness_rating` (`1` / `-1`) for an `interactionId`. |
+| `POST` | `/api/analytics/ai-feedback` | Set `feedback_rating` (`1` / `-1`) for an `interactionId` owned by `userId`. |
 
 When Supabase is not configured the analytics endpoints respond `200 { ok: false, disabled: true }`; `/api/ai-explain` still answers (with `interactionId: null`).
 
-**Tracking coverage** (all fire-and-forget from `public/app.js` via `Analytics`, errors swallowed): practice, exam and spaced-review sessions → `study_sessions` (`started` / `completed` / `abandoned` + `drop_off_question_index`; leaving the page uses `navigator.sendBeacon`); each checked question → `question_attempts`; SM-2 schedule → `spaced_repetition_items` (the **Ôn tập** page `#/review` starts a `spaced_review` session from `GET /api/analytics/due-review`); AI tutor → `ai_interactions` with 👍/👎.
+**Tracking coverage** (all fire-and-forget from `public/app.js` via `Analytics`, errors swallowed): practice, exam and spaced-review sessions → `study_sessions` (`active` / `completed` / `abandoned` + `ended_at` + `drop_off_question_index`; leaving the page uses `navigator.sendBeacon`); each checked question → `question_attempts`; SM-2 schedule → `spaced_repetition` (the **Ôn tập** page `#/review` starts a `spaced_review` session from `GET /api/analytics/due-review`); AI tutor → `ai_interactions` with 👍/👎.
 
 ### Admin dashboard (`/admin/analytics`)
 

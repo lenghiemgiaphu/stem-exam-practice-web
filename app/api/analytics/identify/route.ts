@@ -13,7 +13,7 @@ const bodySchema = z.object({
   referralSource: optionalText(64),
 })
 
-const TABLE = 'user_analytics_profiles'
+const TABLE = 'learner_profiles'
 
 /**
  * POST /api/analytics/identify
@@ -25,11 +25,13 @@ const TABLE = 'user_analytics_profiles'
 export async function POST(req: Request) {
   try {
     assertSameOrigin(req)
-    const body = bodySchema.parse(await readJson(req))
-    enforceRateLimit(req, 'identify', body.userId, { ip: 120, user: 20 })
-
+    // Chưa cấu hình Supabase → 200 { disabled: true } NGAY (trước cả bước kiểm tra dữ liệu/giới hạn tốc độ),
+    // để analytics.js tự ngừng gọi mà không bao giờ gây lỗi 4xx trong console.
     const supabase = getSupabaseAdmin()
     if (!supabase) return disabledResponse()
+
+    const body = bodySchema.parse(await readJson(req))
+    enforceRateLimit(req, 'identify', body.userId, { ip: 120, user: 20 })
 
     const now = new Date().toISOString()
     // Mã khách luôn là 'anonymous', bất kể client khai gì.

@@ -26,31 +26,31 @@ begin
     join pg_namespace ns   on ns.oid  = rel.relnamespace
     join pg_attribute att  on att.attrelid = rel.oid and att.attnum = any (con.conkey)
     where ns.nspname = 'public'
-      and rel.relname = 'user_analytics_profiles'
+      and rel.relname = 'learner_profiles'
       and con.contype = 'c'
       and att.attname = 'cohort_tag'
   loop
-    execute format('alter table public.user_analytics_profiles drop constraint %I', c.conname);
+    execute format('alter table public.learner_profiles drop constraint %I', c.conname);
   end loop;
 end
 $$;
 
 -- 2) Đưa dữ liệu cũ về 'general', giữ lại nguồn gốc trong referral_source nếu còn trống.
-update public.user_analytics_profiles
+update public.learner_profiles
 set referral_source = coalesce(referral_source, cohort_tag),
     cohort_tag      = 'general'
 where cohort_tag is distinct from 'general';
 
 -- 3) Mặc định 'general', không cho NULL.
-alter table public.user_analytics_profiles alter column cohort_tag set default 'general';
-alter table public.user_analytics_profiles alter column cohort_tag set not null;
+alter table public.learner_profiles alter column cohort_tag set default 'general';
+alter table public.learner_profiles alter column cohort_tag set not null;
 
-comment on column public.user_analytics_profiles.cohort_tag is
+comment on column public.learner_profiles.cohort_tag is
   'Nhãn phân nhóm tùy chọn, mặc định general. Không còn ràng buộc giá trị.';
-comment on column public.user_analytics_profiles.referral_source is
+comment on column public.learner_profiles.referral_source is
   'Nguồn truy cập đầu tiên (first-touch): tham số ?ref= / ?utm_source=, tên miền giới thiệu, hoặc direct.';
 
 -- 4) Chỉ mục.
-drop index if exists public.idx_uap_cohort_last_seen;
-create index if not exists idx_uap_referral_source on public.user_analytics_profiles (referral_source);
-create index if not exists idx_uap_auth_first_seen on public.user_analytics_profiles (auth_provider, first_seen_at);
+drop index if exists public.idx_lp_cohort_last_seen;
+create index if not exists idx_lp_referral_source on public.learner_profiles (referral_source);
+create index if not exists idx_lp_auth_first_seen on public.learner_profiles (auth_provider, first_seen_at);

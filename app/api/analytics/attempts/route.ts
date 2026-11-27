@@ -54,11 +54,12 @@ interface SrItem {
 export async function POST(req: Request) {
   try {
     assertSameOrigin(req)
-    const body = bodySchema.parse(await readJson(req, 128 * 1024))
-    enforceRateLimit(req, 'attempts', body.userId, { ip: 240, user: 60 })
-
+    // Chưa cấu hình Supabase → 200 { disabled: true } ngay (xem ghi chú ở identify/route.ts).
     const supabase = getSupabaseAdmin()
     if (!supabase) return disabledResponse()
+
+    const body = bodySchema.parse(await readJson(req, 128 * 1024))
+    enforceRateLimit(req, 'attempts', body.userId, { ip: 240, user: 60 })
 
     const userId = body.userId
     const sessionId = body.sessionId ?? null
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
     if (sessionId) retestQuery = retestQuery.or(`session_id.is.null,session_id.neq.${sessionId}`)
 
     const [srRes, retestRes, sameSessionRes] = await Promise.all([
-      supabase.from('spaced_repetition_items').select('*').eq('user_id', userId).in('question_id', questionIds),
+      supabase.from('spaced_repetition').select('*').eq('user_id', userId).in('question_id', questionIds),
       retestQuery,
       sessionId
         ? supabase.from('question_attempts').select('question_id').eq('session_id', sessionId).in('question_id', questionIds)
@@ -148,8 +149,11 @@ export async function POST(req: Request) {
         }
       })
 
+    // Mọi lượt trong request đều là "làm lại" trong cùng phiên → không có gì để xếp lịch.
+    if (!scheduleRows.length) return json({ ok: true, saved: rows.length, scheduleUpdated: 0 })
+
     const { error: scheduleError } = await supabase
-      .from('spaced_repetition_items')
+      .from('spaced_repetition')
       .upsert(scheduleRows, { onConflict: 'user_id,question_id' })
     if (scheduleError) {
       // Lượt trả lời đã được lưu; lỗi lịch ôn không nên làm hỏng cả request.

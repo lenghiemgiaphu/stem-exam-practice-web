@@ -74,12 +74,12 @@ function scopeSubjectTopic(q: AnyQuery, f: AdminFilters): AnyQuery {
 }
 
 const SESSION_COLS =
-  'id, user_id, subject, topic_id, session_type, status, total_questions, answered_questions, correct_count, score, drop_off_question_index, started_at, completed_at'
+  'id, user_id, subject, topic_id, session_type, status, total_questions, answered_questions, correct_count, score, drop_off_question_index, started_at, ended_at'
 const ATTEMPT_COLS =
   'user_id, session_id, question_id, subject, topic_id, question_type, attempt_context, is_correct, is_first_try_in_session, was_scheduled_on_time, created_at'
 const SRS_COLS = 'user_id, question_id, subject, topic_id, interval_days, ease_factor, repetitions, next_review_at, last_reviewed_at'
 const AI_COLS =
-  'user_id, session_id, question_id, subject, topic_id, question_type, model_name, input_tokens, output_tokens, estimated_cost_usd, helpfulness_rating, is_requery, latency_ms, created_at'
+  'user_id, session_id, question_id, subject, topic_id, question_type, model_name, input_tokens, output_tokens, estimated_cost_usd, feedback_rating, is_requery, latency_ms, created_at'
 
 export async function loadSessions(sb: SupabaseClient, f: AdminFilters): Promise<Loaded<SessionRow>> {
   const loaded = await fetchAll<SessionRow>('sessions', async (a, b) => {
@@ -108,7 +108,7 @@ export async function loadActivity(sb: SupabaseClient, f: AdminFilters, nowMs: n
 export async function loadNewProfiles(sb: SupabaseClient, f: AdminFilters): Promise<Loaded<ProfileRow>> {
   const loaded = await fetchAll<ProfileRow>('profiles', async (a, b) => {
     const q: AnyQuery = sb
-      .from('user_analytics_profiles')
+      .from('learner_profiles')
       .select('user_id, auth_provider, referral_source, first_seen_at, last_seen_at')
       .gte('first_seen_at', f.from)
       .lte('first_seen_at', f.to)
@@ -118,7 +118,7 @@ export async function loadNewProfiles(sb: SupabaseClient, f: AdminFilters): Prom
 }
 
 export async function countUsers(sb: SupabaseClient, f: AdminFilters): Promise<number> {
-  const q: AnyQuery = sb.from('user_analytics_profiles').select('user_id', { count: 'exact', head: true }).lte('first_seen_at', f.to)
+  const q: AnyQuery = sb.from('learner_profiles').select('user_id', { count: 'exact', head: true }).lte('first_seen_at', f.to)
   const { count, error } = await scopeAuth(q, f)
   if (error) {
     console.error('[admin/stats] count users', error.code, error.message)
@@ -142,7 +142,7 @@ export async function loadAttempts(sb: SupabaseClient, f: AdminFilters): Promise
 /** Trạng thái lịch ôn HIỆN TẠI (không giới hạn theo khoảng thời gian); lọc môn / chuyên đề / loại người dùng. */
 export async function loadSrs(sb: SupabaseClient, f: AdminFilters): Promise<Loaded<SrsRow>> {
   const loaded = await fetchAll<SrsRow>('srs', async (a, b) => {
-    const q: AnyQuery = sb.from('spaced_repetition_items').select(SRS_COLS)
+    const q: AnyQuery = sb.from('spaced_repetition').select(SRS_COLS)
     return scopeSubjectTopic(scopeAuth(q, f), f).order('id').range(a, b)
   })
   return { ...loaded, rows: loaded.rows.filter((r) => authOk(f, r.user_id)) }

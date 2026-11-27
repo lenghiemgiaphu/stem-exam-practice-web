@@ -1,6 +1,12 @@
 -- =============================================================================
--- LabLuyen — Lược đồ thống kê học tập (Lần 1)
+-- LabLuyen — Lược đồ thống kê học tập (Đợt 1)
 -- 001_analytics_schema.sql
+--
+-- Tên bảng/cột bám theo bản bàn giao Đợt 1: learner_profiles, study_sessions, question_attempts,
+-- spaced_repetition, ai_interactions; study_sessions.status = active|completed|abandoned,
+-- study_sessions.ended_at, ai_interactions.feedback_rating.
+-- Đã lỡ chạy bản 001 CŨ (user_analytics_profiles / spaced_repetition_items / 'started' /
+-- completed_at / helpfulness_rating)? Chạy 004_align_handover_schema.sql TRƯỚC — nó đổi tên tại chỗ, không mất dữ liệu.
 --
 -- CÁCH CHẠY: Supabase Dashboard → SQL Editor → New query → dán toàn bộ file → Run.
 -- File an toàn khi chạy lại nhiều lần (idempotent): không báo lỗi, không mất dữ liệu.
@@ -16,26 +22,26 @@
 
 
 -- -----------------------------------------------------------------------------
--- 1) user_analytics_profiles — hồ sơ người học
+-- 1) learner_profiles — hồ sơ người học
 -- -----------------------------------------------------------------------------
-create table if not exists public.user_analytics_profiles (
+create table if not exists public.learner_profiles (
   user_id          text primary key,
   cohort_tag       text not null default 'general'
-                     constraint user_analytics_profiles_cohort_tag_check
+                     constraint learner_profiles_cohort_tag_check
                      check (cohort_tag in ('nang_cao_nguyen', 'general')),
   auth_provider    text not null default 'anonymous'
-                     constraint user_analytics_profiles_auth_provider_check
+                     constraint learner_profiles_auth_provider_check
                      check (auth_provider in ('firebase', 'anonymous')),
   referral_source  text,
   first_seen_at    timestamptz not null default now(),
   last_seen_at     timestamptz not null default now()
 );
 
-comment on table  public.user_analytics_profiles is 'Hồ sơ thống kê của người học (Firebase uid hoặc anon_<uuid>).';
-comment on column public.user_analytics_profiles.cohort_tag is 'nang_cao_nguyen = đến từ kênh Nâng Cao Nguyên (?cohort=ncn / ?ref=nangcaonguyen); general = còn lại.';
+comment on table  public.learner_profiles is 'Hồ sơ thống kê của người học (Firebase uid hoặc anon_<uuid>).';
+comment on column public.learner_profiles.cohort_tag is 'nang_cao_nguyen = đến từ kênh Nâng Cao Nguyên (?cohort=ncn / ?ref=nangcaonguyen); general = còn lại.';
 
-create index if not exists idx_uap_cohort_last_seen on public.user_analytics_profiles (cohort_tag, last_seen_at desc);
-create index if not exists idx_uap_first_seen       on public.user_analytics_profiles (first_seen_at);
+create index if not exists idx_lp_cohort_last_seen on public.learner_profiles (cohort_tag, last_seen_at desc);
+create index if not exists idx_lp_first_seen       on public.learner_profiles (first_seen_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -50,18 +56,20 @@ create table if not exists public.study_sessions (
   session_type            text not null
                             constraint study_sessions_session_type_check
                             check (session_type in ('exam', 'topic_practice', 'spaced_review')),
-  status                  text not null default 'started'
+  status                  text not null default 'active'
                             constraint study_sessions_status_check
-                            check (status in ('started', 'completed', 'abandoned')),
+                            check (status in ('active', 'completed', 'abandoned')),
   total_questions         integer not null default 0 check (total_questions >= 0),
   answered_questions      integer not null default 0 check (answered_questions >= 0),
   correct_count           integer not null default 0 check (correct_count >= 0),
   score                   numeric(5, 2) check (score is null or (score >= 0 and score <= 100)),
   drop_off_question_index integer check (drop_off_question_index is null or drop_off_question_index >= 0),
   started_at              timestamptz not null default now(),
-  completed_at            timestamptz
+  ended_at                timestamptz
 );
 
+comment on column public.study_sessions.status is 'active = đang học; completed = đã nộp/kết thúc; abandoned = bỏ dở (đóng tab, thoát giữa chừng).';
+comment on column public.study_sessions.ended_at is 'Thời điểm phiên kết thúc (hoàn thành hoặc bỏ dở); NULL khi còn active.';
 comment on column public.study_sessions.score is 'Điểm thang 10 của ứng dụng (cho phép tới 100 để chứa thang %).';
 comment on column public.study_sessions.drop_off_question_index is 'Chỉ số câu hỏi (bắt đầu từ 0) người học đang xem khi bỏ dở phiên.';
 
@@ -103,9 +111,9 @@ create index if not exists idx_qa_subject_topic         on public.question_attem
 
 
 -- -----------------------------------------------------------------------------
--- 4) spaced_repetition_items — lịch ôn ngắt quãng (SM-2) cho từng (user, câu hỏi)
+-- 4) spaced_repetition — lịch ôn ngắt quãng (SM-2) cho từng (user, câu hỏi)
 -- -----------------------------------------------------------------------------
-create table if not exists public.spaced_repetition_items (
+create table if not exists public.spaced_repetition (
   id               uuid primary key default gen_random_uuid(),
   user_id          text not null,
   question_id      text not null,
@@ -116,11 +124,11 @@ create table if not exists public.spaced_repetition_items (
   repetitions      integer not null default 0 check (repetitions >= 0),
   next_review_at   timestamptz not null default now(),
   last_reviewed_at timestamptz,
-  constraint spaced_repetition_items_user_question_key unique (user_id, question_id)
+  constraint spaced_repetition_user_question_key unique (user_id, question_id)
 );
 
-create index if not exists idx_sri_user_next_review on public.spaced_repetition_items (user_id, next_review_at);
-create index if not exists idx_sri_user_topic       on public.spaced_repetition_items (user_id, topic_id);
+create index if not exists idx_sr_user_next_review on public.spaced_repetition (user_id, next_review_at);
+create index if not exists idx_sr_user_topic       on public.spaced_repetition (user_id, topic_id);
 
 
 -- -----------------------------------------------------------------------------
@@ -138,14 +146,15 @@ create table if not exists public.ai_interactions (
   input_tokens        integer not null default 0 check (input_tokens >= 0),
   output_tokens       integer not null default 0 check (output_tokens >= 0),
   estimated_cost_usd  numeric(12, 6) not null default 0 check (estimated_cost_usd >= 0),
-  helpfulness_rating  smallint
-                        constraint ai_interactions_helpfulness_rating_check
-                        check (helpfulness_rating in (1, -1)),
+  feedback_rating     smallint
+                        constraint ai_interactions_feedback_rating_check
+                        check (feedback_rating in (1, -1)),
   is_requery          boolean not null default false,
   latency_ms          integer check (latency_ms is null or latency_ms >= 0),
   created_at          timestamptz not null default now()
 );
 
+comment on column public.ai_interactions.feedback_rating is '1 = 👍 hữu ích, -1 = 👎 chưa hữu ích, NULL = chưa đánh giá (ghi bởi POST /api/analytics/ai-feedback).';
 comment on column public.ai_interactions.output_tokens is 'candidatesTokenCount của Gemini (chưa gồm thinking tokens; chi phí ước tính đã tính cả thinking tokens).';
 comment on column public.ai_interactions.is_requery is 'true nếu trong 10 phút trước đó cùng user đã hỏi AI về cùng question_id.';
 
@@ -161,16 +170,16 @@ create index if not exists idx_ai_subject_topic         on public.ai_interaction
 -- Service Role Key (chỉ dùng ở server) bỏ qua RLS nên vẫn đọc/ghi bình thường.
 -- Thu hồi thêm quyền bảng của anon/authenticated như một lớp bảo vệ thứ hai.
 -- -----------------------------------------------------------------------------
-alter table public.user_analytics_profiles enable row level security;
+alter table public.learner_profiles enable row level security;
 alter table public.study_sessions          enable row level security;
 alter table public.question_attempts       enable row level security;
-alter table public.spaced_repetition_items enable row level security;
+alter table public.spaced_repetition enable row level security;
 alter table public.ai_interactions         enable row level security;
 
 revoke all on table
-  public.user_analytics_profiles,
+  public.learner_profiles,
   public.study_sessions,
   public.question_attempts,
-  public.spaced_repetition_items,
+  public.spaced_repetition,
   public.ai_interactions
 from anon, authenticated;

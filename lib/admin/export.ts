@@ -53,10 +53,10 @@ export function flattenSummary(summary: AdminSummary): { metric: string; value: 
 export const summaryToCsv = (summary: AdminSummary) => toCsv(['metric', 'value'], flattenSummary(summary))
 
 const COLUMNS: Record<DetailLevel, string[]> = {
-  sessions: ['id', 'user', 'subject', 'topic_id', 'session_type', 'status', 'total_questions', 'answered_questions', 'correct_count', 'score', 'drop_off_question_index', 'started_at', 'completed_at'],
+  sessions: ['id', 'user', 'subject', 'topic_id', 'session_type', 'status', 'total_questions', 'answered_questions', 'correct_count', 'score', 'drop_off_question_index', 'started_at', 'ended_at'],
   attempts: ['user', 'session_id', 'question_id', 'subject', 'topic_id', 'question_type', 'attempt_context', 'is_correct', 'is_first_try_in_session', 'was_scheduled_on_time', 'created_at'],
   srs: ['user', 'question_id', 'subject', 'topic_id', 'interval_days', 'ease_factor', 'repetitions', 'next_review_at', 'last_reviewed_at'],
-  ai: ['user', 'session_id', 'question_id', 'subject', 'topic_id', 'question_type', 'model_name', 'input_tokens', 'output_tokens', 'estimated_cost_usd', 'helpfulness_rating', 'is_requery', 'latency_ms', 'created_at'],
+  ai: ['user', 'session_id', 'question_id', 'subject', 'topic_id', 'question_type', 'model_name', 'input_tokens', 'output_tokens', 'estimated_cost_usd', 'feedback_rating', 'is_requery', 'latency_ms', 'created_at'],
 }
 
 export const detailColumns = (level: DetailLevel) => COLUMNS[level]

@@ -22,8 +22,11 @@ export interface ChatMessage {
 export interface GeminiUsage {
   inputTokens: number
   outputTokens: number
-  /** Token "suy nghĩ" của Gemini 2.5 — được tính tiền như token đầu ra nhưng nằm ngoài candidatesTokenCount. */
-  thinkingTokens: number
+  /**
+   * Token "suy nghĩ" của Gemini 2.5 — được tính tiền như token đầu ra nhưng nằm ngoài candidatesTokenCount.
+   * Tùy chọn: nơi gọi chỉ cần `{ inputTokens, outputTokens }` (thiếu thì coi như 0).
+   */
+  thinkingTokens?: number
 }
 
 export interface GeminiResult {
@@ -84,7 +87,7 @@ function priceFor(model: string) {
 
 export function estimateCostUsd(model: string, usage: GeminiUsage) {
   const price = priceFor(model)
-  const cost = (usage.inputTokens * price.input + (usage.outputTokens + usage.thinkingTokens) * price.output) / 1_000_000
+  const cost = (usage.inputTokens * price.input + (usage.outputTokens + (usage.thinkingTokens ?? 0)) * price.output) / 1_000_000
   return Math.round(cost * 1e6) / 1e6
 }
 
@@ -107,6 +110,10 @@ interface GeminiResponse {
 const REQUEST_TIMEOUT_MS = 50_000
 
 export async function askGemini(ctx: TutorContext, history: ChatMessage[]): Promise<GeminiResult> {
+  // Route đã kiểm tra hasGeminiKey() trước, nhưng hàm này vẫn tự bảo vệ để không bao giờ sập bằng TypeError.
+  if (!hasGeminiKey()) {
+    throw new GeminiError(503, 'ai/missing-key', 'Máy chủ chưa cấu hình GEMINI_API_KEY nên chưa thể bật Gia sư AI.')
+  }
   const model = resolveModel()
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
   const controller = new AbortController()

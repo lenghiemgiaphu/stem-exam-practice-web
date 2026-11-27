@@ -24,7 +24,7 @@ export interface SessionRow {
   score: number | string | null
   drop_off_question_index: number | null
   started_at: string
-  completed_at?: string | null
+  ended_at?: string | null
 }
 export interface ActivityRow {
   user_id: string
@@ -72,7 +72,7 @@ export interface AiRow {
   input_tokens: number
   output_tokens: number
   estimated_cost_usd: number | string
-  helpfulness_rating: number | null
+  feedback_rating: number | null
   is_requery: boolean
   latency_ms: number | null
   created_at: string
@@ -249,7 +249,7 @@ export function aggregateLearning(sessions: SessionRow[], attempts: AttemptRow[]
       total,
       completed: completed.length,
       abandoned: abandoned.length,
-      inProgress: sessions.filter((s) => s.status === 'started').length,
+      inProgress: sessions.filter((s) => s.status === 'active').length,
       completionRate: round(ratio(completed.length, total)),
       abandonRate: round(ratio(abandoned.length, total)),
     },
@@ -318,8 +318,8 @@ export function aggregateAi(rows: AiRow[], filters: AdminFilters): AiStats {
   const inputTokens = rows.reduce((a, r) => a + num(r.input_tokens), 0)
   const outputTokens = rows.reduce((a, r) => a + num(r.output_tokens), 0)
   const cost = rows.reduce((a, r) => a + num(r.estimated_cost_usd), 0)
-  const up = rows.filter((r) => r.helpfulness_rating === 1).length
-  const down = rows.filter((r) => r.helpfulness_rating === -1).length
+  const up = rows.filter((r) => r.feedback_rating === 1).length
+  const down = rows.filter((r) => r.feedback_rating === -1).length
   const requery = rows.filter((r) => r.is_requery).length
   const latencies = rows.filter((r) => r.latency_ms != null).map((r) => num(r.latency_ms)).sort((a, b) => a - b)
   const p95 = latencies.length ? latencies[Math.max(0, Math.ceil(0.95 * latencies.length) - 1)] : null

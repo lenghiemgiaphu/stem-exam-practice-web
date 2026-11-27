@@ -48,16 +48,18 @@ const compact = (obj: Record<string, unknown>) => Object.fromEntries(Object.entr
  * POST /api/analytics/session
  *  - action 'start'    → tạo phiên mới, trả về { sessionId }
  *  - action 'complete' → đánh dấu hoàn thành (kể cả khi trước đó lỡ bị đánh dấu bỏ dở)
- *  - action 'abandon'  → đánh dấu bỏ dở (chỉ khi phiên còn 'started'); hỗ trợ navigator.sendBeacon
+ *  - action 'abandon'  → đánh dấu bỏ dở (chỉ khi phiên còn 'active'); hỗ trợ navigator.sendBeacon
+ * Cả complete lẫn abandon đều ghi ended_at (thời điểm kết thúc phiên).
  */
 export async function POST(req: Request) {
   try {
     assertSameOrigin(req)
-    const body = bodySchema.parse(await readJson(req))
-    enforceRateLimit(req, 'session', body.userId, { ip: 240, user: 60 })
-
+    // Chưa cấu hình Supabase → 200 { disabled: true } ngay (xem ghi chú ở identify/route.ts).
     const supabase = getSupabaseAdmin()
     if (!supabase) return disabledResponse()
+
+    const body = bodySchema.parse(await readJson(req))
+    enforceRateLimit(req, 'session', body.userId, { ip: 240, user: 60 })
 
     if (body.action === 'start') {
       const { data, error } = await supabase
@@ -68,7 +70,7 @@ export async function POST(req: Request) {
           subject: body.subject || null,
           topic_id: body.topicId || null,
           exam_id: body.examId || null,
-          status: 'started',
+          status: 'active',
           total_questions: body.totalQuestions,
         })
         .select('id')
@@ -90,11 +92,11 @@ export async function POST(req: Request) {
           ...common,
           ...compact({ score: body.score ?? undefined }),
           status: 'completed',
-          completed_at: new Date().toISOString(),
+          ended_at: new Date().toISOString(),
         })
         .eq('id', body.sessionId)
         .eq('user_id', body.userId) // chỉ chủ phiên mới được cập nhật
-        .in('status', ['started', 'abandoned'])
+        .in('status', ['active', 'abandoned'])
         .select('id')
       if (error) throw dbError('session/complete', error)
       return json({ ok: true, updated: (data?.length ?? 0) > 0 })
@@ -107,10 +109,11 @@ export async function POST(req: Request) {
         ...common,
         ...compact({ drop_off_question_index: body.dropOffQuestionIndex ?? undefined }),
         status: 'abandoned',
+        ended_at: new Date().toISOString(),
       })
       .eq('id', body.sessionId)
       .eq('user_id', body.userId)
-      .eq('status', 'started')
+      .eq('status', 'active')
       .select('id')
     if (error) throw dbError('session/abandon', error)
     return json({ ok: true, updated: (data?.length ?? 0) > 0 })

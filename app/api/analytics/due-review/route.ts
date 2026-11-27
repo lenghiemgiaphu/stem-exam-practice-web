@@ -18,14 +18,15 @@ const querySchema = z.object({
  */
 export async function GET(req: Request) {
   try {
-    const params = querySchema.parse(Object.fromEntries(new URL(req.url).searchParams))
-    enforceRateLimit(req, 'due-review', params.userId, { ip: 240, user: 30 })
-
+    // Chưa cấu hình Supabase → 200 { disabled: true, questionIds: [] } ngay (xem ghi chú ở identify/route.ts).
     const supabase = getSupabaseAdmin()
     if (!supabase) return disabledResponse({ count: 0, questionIds: [], items: [] })
 
+    const params = querySchema.parse(Object.fromEntries(new URL(req.url).searchParams))
+    enforceRateLimit(req, 'due-review', params.userId, { ip: 240, user: 30 })
+
     let query = supabase
-      .from('spaced_repetition_items')
+      .from('spaced_repetition')
       .select('question_id, subject, topic_id, next_review_at')
       .eq('user_id', params.userId)
       .lte('next_review_at', new Date().toISOString())

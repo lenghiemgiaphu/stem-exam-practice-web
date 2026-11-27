@@ -1,5 +1,16 @@
+import {
+  SM2_FIRST_INTERVAL_DAYS,
+  SM2_INITIAL_EASE_FACTOR,
+  SM2_MAX_INTERVAL_DAYS,
+  SM2_MIN_EASE_FACTOR,
+  SM2_PASS_QUALITY,
+  SM2_QUALITY_CORRECT,
+  SM2_QUALITY_WRONG,
+  SM2_SECOND_INTERVAL_DAYS,
+} from './constants'
+
 /**
- * SM-2 cơ bản (SuperMemo-2) cho ôn tập ngắt quãng.
+ * SM-2 cơ bản (SuperMemo-2) cho ôn tập ngắt quãng. Hằng số nằm ở ./constants.
  *
  * - quality 0–5: ở đây chỉ có 2 mức vì ta chỉ biết đúng/sai → đúng = 4, sai = 1.
  * - quality < 3  → học lại từ đầu: repetitions = 0, interval = 1 ngày, GIỮ NGUYÊN ease factor
@@ -13,30 +24,28 @@ export interface Sm2State {
   repetitions: number
 }
 
-export const SM2_INITIAL: Sm2State = { intervalDays: 0, easeFactor: 2.5, repetitions: 0 }
+export const SM2_INITIAL: Sm2State = { intervalDays: 0, easeFactor: SM2_INITIAL_EASE_FACTOR, repetitions: 0 }
 
-const MIN_EASE = 1.3
-const MAX_INTERVAL_DAYS = 365
-export const QUALITY_CORRECT = 4
-export const QUALITY_WRONG = 1
+export const QUALITY_CORRECT = SM2_QUALITY_CORRECT
+export const QUALITY_WRONG = SM2_QUALITY_WRONG
 
 export const sm2Quality = (isCorrect: boolean) => (isCorrect ? QUALITY_CORRECT : QUALITY_WRONG)
 
 export function sm2Next(prev: Sm2State, quality: number): Sm2State {
-  if (quality < 3) {
-    return { intervalDays: 1, easeFactor: prev.easeFactor, repetitions: 0 }
+  if (quality < SM2_PASS_QUALITY) {
+    return { intervalDays: SM2_FIRST_INTERVAL_DAYS, easeFactor: prev.easeFactor, repetitions: 0 }
   }
 
   let intervalDays: number
-  if (prev.repetitions === 0) intervalDays = 1
-  else if (prev.repetitions === 1) intervalDays = 6
+  if (prev.repetitions === 0) intervalDays = SM2_FIRST_INTERVAL_DAYS
+  else if (prev.repetitions === 1) intervalDays = SM2_SECOND_INTERVAL_DAYS
   else intervalDays = Math.round(Math.max(prev.intervalDays, 1) * prev.easeFactor)
 
   const delta = 5 - quality
-  const easeFactor = Math.max(MIN_EASE, prev.easeFactor + 0.1 - delta * (0.08 + delta * 0.02))
+  const easeFactor = Math.max(SM2_MIN_EASE_FACTOR, prev.easeFactor + 0.1 - delta * (0.08 + delta * 0.02))
 
   return {
-    intervalDays: Math.min(intervalDays, MAX_INTERVAL_DAYS),
+    intervalDays: Math.min(intervalDays, SM2_MAX_INTERVAL_DAYS),
     easeFactor: Math.round(easeFactor * 100) / 100,
     repetitions: prev.repetitions + 1,
   }
