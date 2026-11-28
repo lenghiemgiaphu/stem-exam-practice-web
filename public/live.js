@@ -27,9 +27,25 @@
       /* ignore */
     }
   };
+  // Quyền điều khiển phòng (hostToken) chỉ lưu trong sessionStorage của đúng tab đã tạo phòng:
+  // đóng tab là mất, không bị rò sang tab/phiên khác. pid của người chơi thì lưu localStorage để vào lại sau khi tải lại trang.
+  const readHost = (code) => {
+    try {
+      return sessionStorage.getItem(`labluyen_live_host_${code}`);
+    } catch {
+      return null;
+    }
+  };
+  const writeHost = (code, token) => {
+    try {
+      sessionStorage.setItem(`labluyen_live_host_${code}`, token);
+    } catch {
+      /* ignore */
+    }
+  };
   const uid = () => (typeof Auth !== "undefined" && Auth.user ? Auth.user.uid : "guest");
 
-  const L = { run: 0, timer: null, tick: null, sig: "", offset: 0, mode: "", code: "", pid: "", host: "", state: null, localChoice: null, rewarded: false, reward: null, bestStreak: 0, fails: 0 };
+  const L = { run: 0, timer: null, tick: null, sig: "", offset: 0, mode: "", code: "", pid: "", host: "", state: null, localChoice: null, localQ: -1, rewarded: false, reward: null, bestStreak: 0, fails: 0 };
 
   async function api(method, body, query) {
     const res = await fetch(method === "GET" ? `/api/live?${new URLSearchParams(query)}` : "/api/live", {
@@ -145,7 +161,21 @@
     }
   };
   // Câu hỏi dùng chung đoạn văn (Reading / Cloze) cần đoạn văn đi kèm nên không đưa vào đấu trực tiếp.
-  const isMc = (q) => q.type === "multiple_choice" && q.options && q.correctAnswer && !q.passageId;
+  // Giới hạn của POST /api/live (lib/live/engine.ts): câu hỏi 600, mỗi phương án 300, giải thích 900 ký tự.
+  const LIVE_LIMIT = { text: 600, option: 300, explanation: 900 };
+  const fitsLive = (q) => {
+    const text = String(q.questionText ?? "").trim();
+    if (!text || text.length > LIVE_LIMIT.text) return false;
+    return LETTERS.every((k) => {
+      const o = String(q.options[k] ?? "").trim();
+      return o.length > 0 && o.length <= LIVE_LIMIT.option;
+    });
+  };
+  const isMc = (q) => q.type === "multiple_choice" && q.options && LETTERS.includes(q.correctAnswer) && !q.passageId && fitsLive(q);
+  const fitExplanation = (text) => {
+    const t = String(text || "").trim();
+    return t.length > LIVE_LIMIT.explanation ? `${t.slice(0, LIVE_LIMIT.explanation - 1)}…` : t;
+  };
 
   const setup = { source: "bank", subject: "Physics", grade: "all", topic: "all", count: 10, time: 20, title: "", aiId: "" };
 
@@ -184,8 +214,8 @@
             </div>`
           : `<div><label class="text-sm font-semibold text-slate-700" for="s-ai">Bộ quiz</label><select id="s-ai" name="aiId" class="${selectCls}">${ai.map((q) => `<option value="${esc(q.id)}" ${q.id === setup.aiId ? "selected" : ""}>${esc(q.title || "Quiz AI")}</option>`).join("")}</select></div>`}
         <div class="grid gap-4 sm:grid-cols-2">
-          <div><label class="text-sm font-semibold text-slate-700" for="s-count">Số câu hỏi</label><select id="s-count" name="count" class="${selectCls}">${[5, 10, 15, 20, 30].map((n) => `<option value="${n}" ${n === setup.count ? "selected" : ""}>${n} câu</option>`).join("")}</select></div>
-          <div><label class="text-sm font-semibold text-slate-700" for="s-time">Thời gian mỗi câu</label><select id="s-time" name="time" class="${selectCls}">${[10, 15, 20, 30, 45, 60].map((n) => `<option value="${n}" ${n === setup.time ? "selected" : ""}>${n} giây</option>`).join("")}</select></div>
+          <div><label class="text-sm font-semibold text-slate-700" for="s-count">Số câu hỏi</label><select id="s-count" name="count" class="${selectCls}">${[5, 10, 15, 20, 30, 40].map((n) => `<option value="${n}" ${n === setup.count ? "selected" : ""}>${n} câu</option>`).join("")}</select></div>
+          <div><label class="text-sm font-semibold text-slate-700" for="s-time">Thời gian mỗi câu</label><select id="s-time" name="time" class="${selectCls}">${[8, 10, 15, 20, 30, 45, 60, 90].map((n) => `<option value="${n}" ${n === setup.time ? "selected" : ""}>${n} giây</option>`).join("")}</select></div>
         </div>
         <p id="s-summary" class="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600" aria-live="polite"></p>
         <p id="s-error" class="hidden text-sm font-semibold text-rose-600" role="alert"></p>
@@ -204,16 +234,23 @@
       : "Chưa có câu trắc nghiệm nào phù hợp với lựa chọn này. Hãy đổi môn, lớp hoặc chuyên đề.";
   }
 
+  /**
+   * Đọc lại các lựa chọn từ form. Khi người dùng vừa đổi nguồn (Ngân hàng ↔ Quiz AI), form VẪN đang hiển thị
+   * bố cục cũ nên chỉ được đọc những ô thực sự có mặt — nếu không sẽ lỗi TypeError trước khi kịp vẽ lại giao diện.
+   */
   function readSetup(form) {
+    const el = (name) => form.elements.namedItem(name);
+    const val = (name) => (el(name) ? el(name).value : null);
     setup.title = $("#s-title").value;
-    setup.source = form.source.value;
-    if (setup.source === "bank") {
-      setup.subject = form.subject.value;
-      setup.grade = form.grade.value;
-      setup.topic = form.topic.value;
-    } else setup.aiId = form.aiId.value;
-    setup.count = Number(form.count.value);
-    setup.time = Number(form.time.value);
+    setup.source = val("source") || setup.source;
+    if (el("subject")) {
+      setup.subject = val("subject");
+      setup.grade = val("grade");
+      setup.topic = val("topic");
+    }
+    if (el("aiId")) setup.aiId = val("aiId");
+    if (el("count")) setup.count = Number(val("count"));
+    if (el("time")) setup.time = Number(val("time"));
   }
 
   function shuffle(list) {
@@ -239,13 +276,13 @@
       text: q.questionText,
       options: { A: q.options.A, B: q.options.B, C: q.options.C, D: q.options.D },
       correct: q.correctAnswer,
-      explanation: q.explanation || "",
+      explanation: fitExplanation(q.explanation),
     }));
     const button = form.querySelector("button[type=submit]");
     button.disabled = true;
     try {
       const res = await api("POST", { action: "create", title, subject: setup.source === "bank" ? SUBJECTS[setup.subject].label : "", timeSec: setup.time, questions });
-      write(`labluyen_live_host_${res.code}`, res.hostToken);
+      writeHost(res.code, res.hostToken);
       location.hash = `#/live/room/${res.code}`;
     } catch (e) {
       errorEl.textContent = e.message;
@@ -259,39 +296,48 @@
    * ================================================================= */
   function startRoom(mode, code) {
     stopPolling();
-    Object.assign(L, { mode, code, sig: "", state: null, localChoice: null, rewarded: false, reward: null, bestStreak: 0, fails: 0 });
-    L.host = mode === "host" ? read(`labluyen_live_host_${code}`) || "" : "";
+    Object.assign(L, { mode, code, sig: "", state: null, localChoice: null, localQ: -1, rewarded: false, reward: null, bestStreak: 0, fails: 0 });
+    L.host = mode === "host" ? readHost(code) || "" : "";
     L.pid = mode === "play" ? read(`labluyen_live_pid_${code}`) || "" : "";
-    if (mode === "host" && !L.host) return errorPanel("Thiết bị này không phải người tổ chức của phòng. Hãy tạo phòng mới.");
+    if (mode === "host" && !L.host) return errorPanel("Tab này không giữ quyền điều khiển phòng (quyền chỉ được lưu trong tab đã tạo phòng). Hãy quay lại đúng tab đó hoặc tạo phòng mới.");
     if (mode === "play" && !L.pid) {
       location.hash = `#/live/join/${code}`;
       return;
     }
     view.innerHTML = shell(`<p class="py-24 text-center font-semibold text-slate-500"><i class="fa-solid fa-circle-notch fa-spin mr-2" aria-hidden="true"></i>Đang vào phòng ${esc(code)}…</p>`);
 
-    const run = L.run;
-    const loop = async () => {
-      if (run !== L.run) return;
-      let delay = document.hidden ? 5000 : 1500;
-      try {
-        const query = { code, ...(mode === "host" ? { host: L.host } : { pid: L.pid }) };
-        const state = await api("GET", null, query);
-        if (run !== L.run) return;
-        L.fails = 0;
-        L.offset = state.serverNow - Date.now();
-        onState(state);
-        if (state.phase === "finished") return;
-        if (state.phase === "lobby") delay = document.hidden ? 5000 : 2500;
-      } catch (e) {
-        if (run !== L.run) return;
-        if (e.status === 404) return errorPanel(e.message);
-        L.fails++;
-        if (L.fails === 3) toast("Mất kết nối, đang thử lại…", "error");
-      }
-      L.timer = setTimeout(loop, delay);
-    };
-    loop();
+    poll(L.run);
     L.tick = setInterval(updateTimer, 200);
+  }
+
+  /** Một vòng hỏi trạng thái phòng; tự đặt lịch cho vòng kế tiếp. `run` cũ hơn L.run nghĩa là vòng này đã bị thay thế. */
+  async function poll(run) {
+    if (run !== L.run) return;
+    let delay = document.hidden ? 5000 : 1500;
+    try {
+      const query = { code: L.code, ...(L.mode === "host" ? { host: L.host } : { pid: L.pid }) };
+      const state = await api("GET", null, query);
+      if (run !== L.run) return;
+      L.fails = 0;
+      L.offset = state.serverNow - Date.now();
+      onState(state);
+      if (state.phase === "finished") return;
+      if (state.phase === "lobby") delay = document.hidden ? 5000 : 2500;
+    } catch (e) {
+      if (run !== L.run) return;
+      // 404: phòng không có/đã hết hạn. 503 ngay lần đầu: máy chủ chưa nối Redis — thử lại cũng vô ích.
+      if (e.status === 404 || (e.status === 503 && !L.state)) return errorPanel(e.message);
+      L.fails++;
+      if (L.fails === 3) toast("Mất kết nối, đang thử lại…", "error");
+    }
+    L.timer = setTimeout(() => poll(run), delay);
+  }
+
+  /** Huỷ mọi vòng polling đang chạy/đang chờ rồi bắt đầu lại sau `delay` ms (không bao giờ tạo hai chuỗi song song). */
+  function resumePolling(delay) {
+    clearTimeout(L.timer);
+    const run = ++L.run;
+    L.timer = setTimeout(() => poll(run), delay);
   }
 
   function onState(state) {
@@ -304,7 +350,9 @@
         code: state.code, rank: state.me.rank, players: state.playerCount, correct: state.me.correct, total: state.total, bestStreak: L.bestStreak, title: state.title,
       }) || null;
     }
-    if (state.phase !== "question") L.localChoice = L.localChoice && state.phase === "reveal" ? L.localChoice : null;
+    // Đáp án vừa bấm chỉ có hiệu lực với đúng câu đã chọn (giữ qua pha reveal để hiện kết quả của câu đó).
+    // Sang câu mới / về sảnh / kết thúc thì phải xóa, nếu không học sinh sẽ kẹt ở "Đã gửi đáp án" và không trả lời được nữa.
+    if (L.localChoice && (state.qIndex !== L.localQ || state.phase === "lobby" || state.phase === "finished")) L.localChoice = null;
     const sig = `${state.phase}|${state.qIndex}|${state.me?.answered ? 1 : 0}|${L.localChoice || ""}|${L.reward ? 1 : 0}`;
     if (sig !== L.sig) {
       L.sig = sig;
@@ -485,24 +533,27 @@
    * Actions
    * ================================================================= */
   async function hostCommand(action) {
+    const room = L.code;
     try {
-      await api("POST", { action, code: L.code, hostToken: L.host });
+      await api("POST", { action, code: room, hostToken: L.host });
       clearTimeout(L.timer);
-      const run = L.run;
-      const state = await api("GET", null, { code: L.code, host: L.host });
-      if (run === L.run) {
-        L.offset = state.serverNow - Date.now();
-        onState(state);
-        if (state.phase !== "finished") L.timer = setTimeout(() => startRoom("host", L.code), 1500);
-      }
+      const run = ++L.run; // vô hiệu hóa vòng polling đang chờ; từ đây vòng `run` này là duy nhất
+      const state = await api("GET", null, { code: room, host: L.host });
+      if (run !== L.run) return; // đã rời phòng trong lúc chờ
+      L.offset = state.serverNow - Date.now();
+      onState(state);
+      if (state.phase !== "finished") L.timer = setTimeout(() => poll(run), 1500);
     } catch (e) {
       toast(e.message, "error");
+      // Dù lỗi ở bước nào, màn hình điều khiển vẫn phải tiếp tục cập nhật (trừ khi đã rời phòng).
+      if (L.mode === "host" && L.code === room && L.timer !== null) resumePolling(1500);
     }
   }
 
   async function sendAnswer(choice) {
     if (L.localChoice) return;
     L.localChoice = choice;
+    L.localQ = L.state ? L.state.qIndex : -1;
     onState({ ...L.state });
     try {
       await api("POST", { action: "answer", code: L.code, pid: L.pid, choice });

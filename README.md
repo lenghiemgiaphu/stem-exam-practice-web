@@ -351,10 +351,12 @@ The project is a standard Next.js app and deploys to **Vercel** with no extra bu
 | Method | Action | Auth | Rate limit |
 | :--- | :--- | :--- | :--- |
 | `POST` | `create` — title, subject, `timeSec`, `questions[]` → `{ code, hostToken }` | — | 8 / min / IP |
-| `POST` | `join` — `code`, `name`, optional `pid` (rejoin) → `{ pid, name }` | — | 80 / min / IP |
-| `POST` | `start` · `next` · `end` | `hostToken` | — |
+| `POST` | `join` — `code`, `name`, optional `pid` (rejoin) → `{ pid, name }` | — | 200 / min / IP and 300 / min / room (a whole class often shares one Wi-Fi IP) |
+| `POST` | `start` · `next` · `end` | `hostToken` | 30 / 10 s / room |
 | `POST` | `answer` — `code`, `pid`, `choice` (`A`–`D`) | `pid` | 20 / 10 s / player |
 | `GET` | `?code=&pid=&host=` — full room state for the caller's role | — | — |
+
+Every `POST` response carries `Cache-Control: no-store`; malformed JSON is `400`, bodies over ~300 KB are `413`. Limits per question: text 600, option 300, explanation 900 characters (the host UI filters out longer questions automatically). The host's `hostToken` is kept in `sessionStorage` of the tab that created the room (closing the tab drops control of the room); a player's `pid` is kept in `localStorage` so a reload rejoins the same seat.
 
 ### Analytics API (`/api/analytics/*`, `/api/ai-explain`)
 

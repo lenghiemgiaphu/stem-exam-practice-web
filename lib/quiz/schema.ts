@@ -32,7 +32,7 @@ export type GeneratedQuiz = z.infer<typeof generatedQuizSchema>
 export const optionsSchema = z.object({
   subject: z.enum(['Math', 'Physics', 'Chemistry', 'Biology', 'English', 'General']),
   grade: z.coerce.number().int().min(10).max(12),
-  count: z.coerce.number().int().min(3).max(20),
+  count: z.coerce.number().int().min(5).max(20),
   difficulty: z.enum(['mixed', 'easy', 'medium', 'hard']),
   types: z.array(z.enum(QUESTION_TYPES)).min(1),
 })
